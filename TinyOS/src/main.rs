@@ -5,35 +5,9 @@
 core::arch::global_asm!(include_str!("trap.S"));
 core::arch::global_asm!(include_str!("boot.S"));
 
-mod init;
-mod link;
-mod memory;
-
-
-// ///////////////////////////////////
-// / RUST MACROS
-// ///////////////////////////////////
-#[macro_export]
-macro_rules! print
-{
-	($($args:tt)+) => ({
-			use core::fmt::Write;
-			let _ = write!(crate::uart::Uart::new(0x1000_0000), $($args)+);
-			});
-}
-#[macro_export]
-macro_rules! println
-{
-	() => ({
-		   print!("\r\n")
-		   });
-	($fmt:expr) => ({
-			print!(concat!($fmt, "\r\n"))
-			});
-	($fmt:expr, $($args:tt)+) => ({
-			print!(concat!($fmt, "\r\n"), $($args)+)
-			});
-}
+mod consts;
+mod uart;
+mod printf;
 
 // ///////////////////////////////////
 // / LANGUAGE STRUCTURES / FUNCTIONS
@@ -57,6 +31,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 	}
 	abort();
 }
+
 #[no_mangle]
 extern "C"
 fn abort() -> ! {
@@ -66,10 +41,6 @@ fn abort() -> ! {
 		}
 	}
 }
-
-// ///////////////////////////////////
-// / CONSTANTS
-// ///////////////////////////////////
 
 // ///////////////////////////////////
 // / ENTRY POINT
@@ -85,7 +56,7 @@ fn kmain() {
 	// The UART is sitting at MMIO address 0x1000_0000, so for testing
 	// now, lets connect to it and see if we can initialize it and write
 	// to it.
-	let mut my_uart = uart::Uart::new(0x1000_0000);
+	let mut my_uart = uart::Uart::new(consts::memlayout::UART0);
 
 	my_uart.init();
 
@@ -147,9 +118,3 @@ fn kmain() {
 		}
 	}
 }
-
-// ///////////////////////////////////
-// / RUST MODULES
-// ///////////////////////////////////
-
-pub mod uart;

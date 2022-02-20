@@ -3,14 +3,31 @@
 
 use core::convert::TryInto;
 use core::fmt::Write;
-use core::fmt::Error;
+use core::fmt;
+
+const RHR: usize = 0;
+const THR: usize = 0;
+const IER: usize = 1;
+const FCR: usize = 2;
+const ISR: usize = 2;
+const LCR: usize = 3;
+const LSR: usize = 5;
+
+// const IER_RX_ENABLE: u8 = 1 << 0;
+// const IER_TX_ENABLE: u8 = 1 << 1;
+// const FCR_FIFO_ENABLE: u8 = 1 << 0;
+// const FCR_FIFO_CLEAR: u8 = 3 << 1;
+// const LCR_EIGHT_BITS: u8 = 3 << 0;
+// const LCR_BAUD_LATCH: u8 = 1 << 7;
+// const LSR_RX_READY: u8 = 1 << 0;
+// const LSR_TX_IDLE: u8 = 1 << 5;
 
 pub struct Uart {
 	base_address: usize,
 }
 
 impl Write for Uart {
-	fn write_str(&mut self, out: &str) -> Result<(), Error> {
+	fn write_str(&mut self, out: &str) -> fmt::Result {
 		for c in out.bytes() {
 			self.put(c);
 		}
@@ -28,71 +45,35 @@ impl Uart {
 	pub fn init(&mut self) {
 		let ptr = self.base_address as *mut u8;
 		unsafe {
-			// First, set the word length, which
-			// are bits 0 and 1 of the line control register (LCR)
-			// which is at base_address + 3
-			// We can easily write the value 3 here or 0b11, but I'm
-			// extending it so that it is clear we're setting two individual
-			// fields
-			//                         Word 0     Word 1
-			//                         ~~~~~~     ~~~~~~
-			ptr.add(3).write_volatile((1 << 0) | (1 << 1));
 
-			// Now, enable the FIFO, which is bit index 0 of the FIFO
-			// control register (FCR at offset 2).
-			// Again, we can just write 1 here, but when we use left shift,
-			// it's easier to see that we're trying to write bit index #0.
-			ptr.add(2).write_volatile(1 << 0);
+			// disable interrupts
+			ptr.add(IER).write_volatile(0x00);
 
-			// Enable receiver buffer interrupts, which is at bit index
-			// 0 of the interrupt enable register (IER at offset 1).
-			ptr.add(1).write_volatile(1 << 0);
+			// special mode to set baud rate
+			ptr.add(LCR).write_volatile(0x80);
 
-			// If we cared about the divisor, the code below would set the divisor
-			// from a global clock rate of 22.729 MHz (22,729,000 cycles per second)
-			// to a signaling rate of 2400 (BAUD). We usually have much faster signalling
-			// rates nowadays, but this demonstrates what the divisor actually does.
-			// The formula given in the NS16500A specification for calculating the divisor
-			// is:
-			// divisor = ceil( (clock_hz) / (baud_sps x 16) )
-			// So, we substitute our values and get:
-			// divisor = ceil( 22_729_000 / (2400 x 16) )
-			// divisor = ceil( 22_729_000 / 38_400 )
-			// divisor = ceil( 591.901 ) = 592
+			// LSB for baud rate of 38.4k
+			ptr.add(0).write_volatile(0x03);
 
-			// The divisor register is two bytes (16 bits), so we need to split the value
-			// 592 into two bytes. Typically, we would calculate this based on measuring
-			// the clock rate, but again, for our purposes [qemu], this doesn't really do
-			// anything.
-			let divisor: u16 = 592;
-			let divisor_least: u8 = (divisor & 0xff).try_into().unwrap();
-			let divisor_most:  u8 = (divisor >> 8).try_into().unwrap();
+			// MSB for baud rate of 38.4k
+			ptr.add(1).write_volatile(0x00);
 
-			// Notice that the divisor register DLL (divisor latch least) and DLM (divisor latch most)
-			// have the same base address as the receiver/transmitter and the interrupt enable register.
-			// To change what the base address points to, we open the "divisor latch" by writing 1 into
-			// the Divisor Latch Access Bit (DLAB), which is bit index 7 of the Line Control Register (LCR)
-			// which is at base_address + 3.
-			let lcr = ptr.add(3).read_volatile();
-			ptr.add(3).write_volatile(lcr | 1 << 7);
+			// leave set-baud mode
+			// and set word length to 8 bits, no parity
+			ptr.add(LCR).write_volatile(0x07);
 
-			// Now, base addresses 0 and 1 point to DLL and DLM, respectively.
-			// Put the lower 8 bits of the divisor into DLL
-			ptr.add(0).write_volatile(divisor_least);
-			ptr.add(1).write_volatile(divisor_most);
+			// reset and enable FIFOs.
+			ptr.add(FCR).write_volatile(0x01);
 
-			// Now that we've written the divisor, we never have to touch this again. In hardware, this
-			// will divide the global clock (22.729 MHz) into one suitable for 2,400 signals per second.
-			// So, to once again get access to the RBR/THR/IER registers, we need to close the DLAB bit
-			// by clearing it to 0. Here, we just restore the original value of lcr.
-			ptr.add(3).write_volatile(lcr);
+			// enable receive interrupts
+			ptr.add(IER).write_volatile(0x01);
 		}
 	}
 
 	pub fn put(&mut self, c: u8) {
 		let ptr = self.base_address as *mut u8;
 		unsafe {
-			ptr.add(0).write_volatile(c);
+			ptr.add(THR).write_volatile(c);
 		}
 	}
 

@@ -1,9 +1,10 @@
 // uart.rs
 // UART routines and driver
 
-use core::convert::TryInto;
 use core::fmt::Write;
 use core::fmt;
+
+use crate::spinlock;
 
 const RHR: usize = 0;
 const THR: usize = 0;
@@ -13,14 +14,23 @@ const ISR: usize = 2;
 const LCR: usize = 3;
 const LSR: usize = 5;
 
-// const IER_RX_ENABLE: u8 = 1 << 0;
-// const IER_TX_ENABLE: u8 = 1 << 1;
-// const FCR_FIFO_ENABLE: u8 = 1 << 0;
-// const FCR_FIFO_CLEAR: u8 = 3 << 1;
-// const LCR_EIGHT_BITS: u8 = 3 << 0;
-// const LCR_BAUD_LATCH: u8 = 1 << 7;
-// const LSR_RX_READY: u8 = 1 << 0;
-// const LSR_TX_IDLE: u8 = 1 << 5;
+const IER_RX_ENABLE: u8 = 1 << 0;
+const IER_TX_ENABLE: u8 = 1 << 1;
+const FCR_FIFO_ENABLE: u8 = 1 << 0;
+const FCR_FIFO_CLEAR: u8 = 3 << 1;
+const LCR_EIGHT_BITS: u8 = 3 << 0;
+const LCR_BAUD_LATCH: u8 = 1 << 7;
+const LSR_RX_READY: u8 = 1 << 0;
+const LSR_TX_IDLE: u8 = 1 << 5;
+
+const UART_TX_BUF_SIZE: usize = 32;
+
+static uart_tx_lock: spinlock::SpinLock = spinlock::SpinLock::new("uart");
+
+static uart_tx_w: usize = 0;
+static uart_tx_r: usize = 0;
+
+static uart_tx_buf: [u8; UART_TX_BUF_SIZE] = [0; UART_TX_BUF_SIZE];
 
 pub struct Uart {
 	base_address: usize,
@@ -50,7 +60,7 @@ impl Uart {
 			ptr.add(IER).write_volatile(0x00);
 
 			// special mode to set baud rate
-			ptr.add(LCR).write_volatile(0x80);
+			ptr.add(LCR).write_volatile(LCR_BAUD_LATCH);
 
 			// LSB for baud rate of 38.4k
 			ptr.add(0).write_volatile(0x03);
@@ -60,13 +70,13 @@ impl Uart {
 
 			// leave set-baud mode
 			// and set word length to 8 bits, no parity
-			ptr.add(LCR).write_volatile(0x07);
+			ptr.add(LCR).write_volatile(LCR_EIGHT_BITS);
 
 			// reset and enable FIFOs.
-			ptr.add(FCR).write_volatile(0x01);
+			ptr.add(FCR).write_volatile(FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
 
 			// enable receive interrupts
-			ptr.add(IER).write_volatile(0x01);
+			ptr.add(IER).write_volatile(IER_TX_ENABLE | IER_RX_ENABLE);
 		}
 	}
 

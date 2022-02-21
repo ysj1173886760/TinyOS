@@ -2,8 +2,6 @@
 #![no_main]
 #![feature(panic_info_message)]
 
-use crate::proc::cpuid;
-
 core::arch::global_asm!(include_str!("trap.S"));
 core::arch::global_asm!(include_str!("boot.S"));
 
@@ -54,12 +52,8 @@ extern "C"
 fn kmain() {
 	let mut lock = spinlock::SpinLock::new("test_lock");
 	lock.acquire();
-	println!("current cpu id is {}", cpuid());
+	println!("current cpu id is {}", proc::cpuid());
 	lock.release();
-
-	if cpuid() != 0 {
-		loop {}
-	}
 
 	let mut my_uart = uart::Uart::new(consts::memlayout::UART0);
 

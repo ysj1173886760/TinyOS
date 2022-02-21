@@ -12,15 +12,15 @@ pub struct SpinLock {
     
     // For debugging
     name: &'static str,
-    cpu: *mut proc::Cpu,
+    cpu_id: usize,
 }
 
 impl SpinLock {
-    pub fn new(name: &'static str) -> Self {
+    pub const fn new(name: &'static str) -> Self {
         SpinLock {
             locked: AtomicBool::new(false),
             name: name,
-            cpu: ptr::null_mut(),
+            cpu_id: 0,
         }
     }
 
@@ -31,7 +31,8 @@ impl SpinLock {
         }
         while self.locked.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {}
         // i think we don't need memory fence here, since we are using acquire semantic
-        self.cpu = proc::mycpu();
+        self.cpu_id = proc::cpuid();
+        // i didn't reset lock->cpu_id here, because we will only read cpu_id when we acquired the lock
     }
 
     pub fn release(&mut self) {
@@ -39,13 +40,12 @@ impl SpinLock {
             panic!("release");
         }
 
-        self.cpu = ptr::null_mut();
         self.locked.store(false, Ordering::Release);
         pop_off();
     }
 
     fn holding(&self) -> bool {
-        return self.locked.load(Ordering::Relaxed) && self.cpu == proc::mycpu();
+        return self.locked.load(Ordering::Relaxed) && self.cpu_id == proc::cpuid();
     }
 }
 

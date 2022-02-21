@@ -1,13 +1,12 @@
 use crate::consts::param::NCPU;
 use crate::riscv;
-use core::sync::atomic::AtomicPtr;
 
 static mut CPUS: [Cpu; NCPU] = [Cpu::new(); NCPU];
 
 #[derive(Copy, Clone)]
 pub struct Cpu {
-    noff: u8,
-    intena: bool,
+    pub noff: u8,
+    pub intena: bool,
 }
 
 impl Cpu {
@@ -23,9 +22,9 @@ pub unsafe fn cpuid() -> usize {
     return riscv::r_tp();
 }
 
-pub fn mycpu() -> AtomicPtr<Cpu> {
+pub fn mycpu() -> *mut Cpu {
     unsafe {
         let id = cpuid();
-        return AtomicPtr::new(&mut CPUS[id]);
+        return &mut CPUS[id];
     }
 }

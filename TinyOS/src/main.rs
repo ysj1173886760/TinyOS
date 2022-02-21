@@ -10,6 +10,7 @@ mod uart;
 mod printf;
 mod proc;
 mod riscv;
+mod spinlock;
 
 // ///////////////////////////////////
 // / LANGUAGE STRUCTURES / FUNCTIONS

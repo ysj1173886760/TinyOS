@@ -18,7 +18,7 @@ impl Cpu {
     }
 }
 
-pub unsafe fn cpuid() -> usize {
+pub fn cpuid() -> usize {
     return riscv::r_tp();
 }
 

@@ -2,6 +2,8 @@ use core::ptr;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 
+use crate::print;
+use crate::println;
 use crate::riscv;
 use crate::proc;
 
@@ -14,7 +16,7 @@ pub struct SpinLock {
 }
 
 impl SpinLock {
-    fn new(name: &'static str) -> Self {
+    pub fn new(name: &'static str) -> Self {
         SpinLock {
             locked: AtomicBool::new(false),
             name: name,
@@ -22,7 +24,7 @@ impl SpinLock {
         }
     }
 
-    fn acquire(&mut self) {
+    pub fn acquire(&mut self) {
         push_off();
         if self.holding() {
             panic!("acquire");
@@ -32,7 +34,7 @@ impl SpinLock {
         self.cpu = proc::mycpu();
     }
 
-    fn release(&mut self) {
+    pub fn release(&mut self) {
         if !self.holding() {
             panic!("release");
         }
@@ -52,7 +54,7 @@ fn push_off() {
     riscv::intr_off();
     let mut cpu;
     unsafe {
-        cpu = *proc::mycpu();
+        cpu = &mut *proc::mycpu();
     }
     if cpu.noff == 0 {
         cpu.intena = old;
@@ -63,7 +65,7 @@ fn push_off() {
 fn pop_off() {
     let mut cpu;
     unsafe {
-        cpu = *proc::mycpu();
+        cpu = &mut *proc::mycpu();
     }
     
     // we shouldn't turn on interrupt until noff is 0

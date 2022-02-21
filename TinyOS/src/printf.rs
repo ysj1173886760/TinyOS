@@ -3,7 +3,7 @@ macro_rules! print
 {
 	($($args:tt)+) => ({
 			use core::fmt::Write;
-			let _ = write!(crate::uart::Uart::new(consts::memlayout::UART0), $($args)+);
+			let _ = write!(crate::uart::Uart::new(crate::consts::memlayout::UART0), $($args)+);
 			});
 }
 

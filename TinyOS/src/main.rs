@@ -2,15 +2,17 @@
 #![no_main]
 #![feature(panic_info_message)]
 
+use crate::proc::cpuid;
+
 core::arch::global_asm!(include_str!("trap.S"));
 core::arch::global_asm!(include_str!("boot.S"));
 
 mod consts;
 mod uart;
-mod printf;
 mod proc;
 mod riscv;
 mod spinlock;
+mod printf;
 
 // ///////////////////////////////////
 // / LANGUAGE STRUCTURES / FUNCTIONS
@@ -50,6 +52,15 @@ fn abort() -> ! {
 #[no_mangle]
 extern "C"
 fn kmain() {
+	let mut lock = spinlock::SpinLock::new("test_lock");
+	lock.acquire();
+	println!("current cpu id is {}", cpuid());
+	lock.release();
+
+	if cpuid() != 0 {
+		loop {}
+	}
+
 	let mut my_uart = uart::Uart::new(consts::memlayout::UART0);
 
 	my_uart.init();

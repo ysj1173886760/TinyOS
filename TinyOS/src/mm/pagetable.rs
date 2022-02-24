@@ -1,6 +1,6 @@
 use crate::consts::riscv::{MAXVA, SATP_SV39, SV39FLAGLEN};
 
-use super::{PGSHIFT, pg_round_down};
+use super::{PGSHIFT, pg_round_down, KBox};
 
 // use bitflags::bitflags;
 
@@ -51,6 +51,18 @@ impl PageTableEntry {
 
 }
 
+const PXMASK: usize = 0x1FF;
+
+#[inline]
+fn px_shift(level: usize) -> usize {
+    PGSHIFT + (9 * level)
+}
+
+#[inline]
+fn px(level: usize, va: usize) -> usize {
+    (va >> px_shift(level)) & PXMASK
+}
+
 #[repr(C, align(4096))]
 pub struct PageTable {
     data: [PageTableEntry; 512],
@@ -73,18 +85,42 @@ impl PageTable {
         SATP_SV39 | ((&self as *const _ as usize) >> PGSHIFT)
     }
 
-    pub fn map_pages(
-        &mut self,
-        va: usize,
-        size: usize,
-        pa: usize,
-        perm: usize,
-    ) -> Result<(), &'static str> {
+    pub fn map_pages(&mut self, va: usize, size: usize, pa: usize, perm: usize) -> Result<(), &'static str> {
         let last = va + size;
         Ok(())
     }
 
-    pub fn walk(&self, va: usize, alloc: bool) {
+    pub fn walk(&mut self, va: usize, alloc: bool) -> Option<&mut PageTableEntry> {
+        if va > MAXVA {
+            panic!("walk");
+        }
 
+        let mut pgtbl = self;
+        for level in (1..=2).rev() {
+            let pte = &mut pgtbl.data[px(level, va)];
+            if pte.is_valid() {
+                unsafe {
+                    pgtbl = &mut *pte.as_page_table();
+                }
+            } else {
+                if !alloc {
+                    return None;
+                }
+                match KBox::<PageTable>::new() {
+                    Some(mut new_page_table) => {
+                        new_page_table.clear();
+                        unsafe {
+                            // we have to move the ownership and convert it to pointer
+                            // otherwise, new_page_table will be destructed when leaving the scope
+                            let ptr = new_page_table.into_raw();
+                            pgtbl = &mut *ptr;
+                            pte.write(ptr as usize);
+                        }
+                    },
+                    None => return None,
+                }
+            }
+        }
+        None
     }
 }

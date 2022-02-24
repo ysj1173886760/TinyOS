@@ -6,7 +6,7 @@ mod pagetable;
 mod kbox;
 
 const PGSIZE: usize = 4096;
-const PGSHIFT: u8 = 12;
+const PGSHIFT: usize = 12;
 
 #[inline]
 fn pg_round_up(addr: usize) -> usize {

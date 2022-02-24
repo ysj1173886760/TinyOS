@@ -1,9 +1,5 @@
-// uart.rs
-// UART routines and driver
-
-use core::fmt::Write;
-use core::fmt;
-
+use core::ptr;
+use crate::consts::memlayout::UART0;
 use crate::spinlock;
 
 const RHR: usize = 0;
@@ -32,72 +28,61 @@ static uart_tx_r: usize = 0;
 
 static uart_tx_buf: [u8; UART_TX_BUF_SIZE] = [0; UART_TX_BUF_SIZE];
 
-pub struct Uart {
-	base_address: usize,
+macro_rules! Reg {
+	($reg: expr) => {
+		UART0 + $reg
+	};
 }
 
-impl Write for Uart {
-	fn write_str(&mut self, out: &str) -> fmt::Result {
-		for c in out.bytes() {
-			self.put(c);
+macro_rules! ReadReg {
+	($reg: expr) => {
+		unsafe {
+			ptr::read_volatile(Reg!($reg) as *const u8)
 		}
-		Ok(())
+	};
+}
+
+macro_rules! WriteReg {
+	($reg: expr, $value: expr) => {
+		unsafe {
+			ptr::write_volatile(Reg!($reg) as *mut u8, $value);
+		}
 	}
 }
 
-impl Uart {
-	pub fn new(base_address: usize) -> Self {
-		Uart {
-			base_address
-		}
-	}
+pub fn uartinit() {
+	// disable interrupts
+	WriteReg!(IER, 0x00);
 
-	pub fn init(&mut self) {
-		let ptr = self.base_address as *mut u8;
-		unsafe {
+	// special mode to set baud rate
+	WriteReg!(LCR, LCR_BAUD_LATCH);
 
-			// disable interrupts
-			ptr.add(IER).write_volatile(0x00);
+	// LSB for baud rate of 38.4k
+	WriteReg!(0, 0x03);
 
-			// special mode to set baud rate
-			ptr.add(LCR).write_volatile(LCR_BAUD_LATCH);
+	// MSB for baud rate of 38.4k
+	WriteReg!(1, 0x00);
 
-			// LSB for baud rate of 38.4k
-			ptr.add(0).write_volatile(0x03);
+	// leave set-baud mode
+	// and set word length to 8 bits, no parity
+	WriteReg!(LCR, LCR_EIGHT_BITS);
 
-			// MSB for baud rate of 38.4k
-			ptr.add(1).write_volatile(0x00);
+	// reset and enable FIFOs.
+	WriteReg!(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
 
-			// leave set-baud mode
-			// and set word length to 8 bits, no parity
-			ptr.add(LCR).write_volatile(LCR_EIGHT_BITS);
+	// enable receive interrupts
+	WriteReg!(IER, IER_TX_ENABLE | IER_RX_ENABLE);
+}
 
-			// reset and enable FIFOs.
-			ptr.add(FCR).write_volatile(FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
+pub fn uartputc(c: u8) {
+	while (ReadReg!(LSR) & (1 << 5)) == 0 {}
+	WriteReg!(THR, c);
+}
 
-			// enable receive interrupts
-			ptr.add(IER).write_volatile(IER_TX_ENABLE | IER_RX_ENABLE);
-		}
-	}
-
-	pub fn put(&mut self, c: u8) {
-		let ptr = self.base_address as *mut u8;
-		unsafe {
-			ptr.add(THR).write_volatile(c);
-		}
-	}
-
-	pub fn get(&mut self) -> Option<u8> {
-		let ptr = self.base_address as *mut u8;
-		unsafe {
-			if ptr.add(5).read_volatile() & 1 == 0 {
-				// The DR bit is 0, meaning no data
-				None
-			}
-			else {
-				// The DR bit is 1, meaning data!
-				Some(ptr.add(0).read_volatile())
-			}
-		}
+pub fn uartgetc() -> Option<u8> {
+	if ReadReg!(5) & 1 == 0 {
+		None
+	} else {
+		Some(ReadReg!(0))
 	}
 }

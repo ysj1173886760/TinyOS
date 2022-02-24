@@ -2,8 +2,7 @@
 #![no_main]
 #![feature(panic_info_message)]
 
-core::arch::global_asm!(include_str!("trap.S"));
-core::arch::global_asm!(include_str!("boot.S"));
+core::arch::global_asm!(include_str!("asm/entry.S"));
 
 mod consts;
 mod uart;
@@ -11,6 +10,8 @@ mod proc;
 mod riscv;
 mod spinlock;
 mod printf;
+mod mm;
+mod init_core;
 
 // ///////////////////////////////////
 // / LANGUAGE STRUCTURES / FUNCTIONS
@@ -48,24 +49,23 @@ fn abort() -> ! {
 // / ENTRY POINT
 // ///////////////////////////////////
 #[no_mangle]
-extern "C"
 fn kmain() {
-	let mut lock = spinlock::SpinLock::new("test_lock");
-	lock.acquire();
+	if proc::cpuid() == 0 {
+		uart::uartinit();
+	}
 	println!("current cpu id is {}", proc::cpuid());
-	lock.release();
 
-	let mut my_uart = uart::Uart::new(consts::memlayout::UART0);
+	if proc::cpuid() != 0 {
+		return
+	}
 
-	my_uart.init();
-
-	println!("xv6-rust kernel is booting");
+	// println!("xv6-rust kernel is booting");
 
 	// Now see if we can read stuff:
 	// Usually we can use #[test] modules in Rust, but it would convolute the
 	// task at hand. So, we'll just add testing snippets.
 	loop {
-		if let Some(c) = my_uart.get() {
+		if let Some(c) = uart::uartgetc() {
 			match c {
 				8 => {
 					// This is a backspace, so we essentially have
@@ -83,10 +83,10 @@ fn kmain() {
 					  // These are multi-byte sequences, so we can take
 					  // a chance and get from UART ourselves.
 					  // Later, we'll button this up.
-					  if let Some(next_byte) = my_uart.get() {
+					  if let Some(next_byte) = uart::uartgetc() {
 						  if next_byte == 91 {
 							  // This is a right bracket! We're on our way!
-							  if let Some(b) = my_uart.get() {
+							  if let Some(b) = uart::uartgetc() {
 								  match b as char {
 									  'A' => {
 										  println!("That's the up arrow!");

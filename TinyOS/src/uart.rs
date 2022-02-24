@@ -21,7 +21,7 @@ const LSR_TX_IDLE: u8 = 1 << 5;
 
 const UART_TX_BUF_SIZE: usize = 32;
 
-static uart_tx_lock: spinlock::SpinLock = spinlock::SpinLock::new("uart");
+static uart_tx_lock: spinlock::SpinLock<()> = spinlock::SpinLock::new((), "uart");
 
 static uart_tx_w: usize = 0;
 static uart_tx_r: usize = 0;

@@ -3,7 +3,7 @@ use crate::{spinlock::SpinLock, uart::uartputc};
 use core::fmt::{self, Write};
 
 struct Pr {
-	lock: SpinLock,
+	lock: SpinLock<()>,
 }
 
 impl fmt::Write for Pr {
@@ -16,14 +16,13 @@ impl fmt::Write for Pr {
 }
 
 static mut PR: Pr = Pr {
-	lock: SpinLock::new("print")
+	lock: SpinLock::new((), "print")
 };
 
 pub fn _print(args: fmt::Arguments) {
 	unsafe {
-		PR.lock.acquire();
+		let guard = PR.lock.lock();
 		PR.write_fmt(args).expect("print error");
-		PR.lock.release();
 	}
 }
 
@@ -39,12 +38,12 @@ macro_rules! print
 macro_rules! println
 {
 	() => ({
-		print!("\n")
+		$crate::print!("\n")
 	});
 	($fmt:expr) => ({
-		print!(concat!($fmt, "\n"))
+		$crate::print!(concat!($fmt, "\n"))
 	});
 	($fmt:expr, $($args:tt)+) => ({
-		print!(concat!($fmt, "\n"), $($args)+)
+		$crate::print!(concat!($fmt, "\n"), $($args)+)
 	});
 }

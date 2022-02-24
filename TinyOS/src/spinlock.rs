@@ -1,51 +1,96 @@
-use core::ptr;
+use core::cell::{UnsafeCell, Cell};
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
+use core::sync::atomic::fence;
+use core::ops::{Deref, DerefMut, Drop};
 
-use crate::print;
-use crate::println;
 use crate::riscv;
 use crate::proc;
 
-pub struct SpinLock {
+pub struct SpinLock<T> {
     locked: AtomicBool,
+    data: UnsafeCell<T>,
     
     // For debugging
     name: &'static str,
-    cpu_id: usize,
+    // we need interior mutability here
+    cpu_id: Cell<isize>,
 }
 
-impl SpinLock {
-    pub const fn new(name: &'static str) -> Self {
+unsafe impl<T: Send> Sync for SpinLock<T> {}
+
+impl<T> SpinLock<T> {
+    pub const fn new(data: T, name: &'static str) -> SpinLock<T> {
         SpinLock {
             locked: AtomicBool::new(false),
             name: name,
-            cpu_id: 0,
+            cpu_id: Cell::new(-1),
+            data: UnsafeCell::new(data),
         }
     }
+}
 
-    pub fn acquire(&mut self) {
+impl<T> SpinLock<T> {
+    fn holding(&self) -> bool {
+        return self.locked.load(Ordering::Relaxed) && self.cpu_id.get() == proc::cpuid() as isize;
+    }
+
+    fn acquire(&self) {
         push_off();
         if self.holding() {
             panic!("acquire");
         }
         while self.locked.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {}
-        // i think we don't need memory fence here, since we are using acquire semantic
-        self.cpu_id = proc::cpuid();
+
+        // use memory fence anyway
+        fence(Ordering::SeqCst);
+
+        self.cpu_id.set(proc::cpuid() as isize);
         // i didn't reset lock->cpu_id here, because we will only read cpu_id when we acquired the lock
     }
 
-    pub fn release(&mut self) {
+    fn release(&self) {
         if !self.holding() {
             panic!("release");
         }
 
+        // exactly xv6 order here
+        self.cpu_id.set(-1);
+        fence(Ordering::SeqCst);
         self.locked.store(false, Ordering::Release);
         pop_off();
     }
 
-    fn holding(&self) -> bool {
-        return self.locked.load(Ordering::Relaxed) && self.cpu_id == proc::cpuid();
+    pub fn lock(&self) -> SpinLockGuard<T> {
+        self.acquire();
+        SpinLockGuard {
+            spinlock: &self,
+            data: unsafe { &mut *self.data.get() }
+        }
+    }
+}
+
+pub struct SpinLockGuard<'a, T: 'a> {
+    spinlock: &'a SpinLock<T>,
+    data: &'a mut T,
+}
+
+impl<'a, T> Deref for SpinLockGuard<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &*self.data
+    }
+}
+
+impl<'a, T> DerefMut for SpinLockGuard<'a, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut *self.data
+    }
+}
+
+impl<'a, T> Drop for SpinLockGuard<'a, T> {
+    fn drop(&mut self) {
+        self.spinlock.release();
     }
 }
 

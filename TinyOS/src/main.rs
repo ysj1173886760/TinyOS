@@ -2,6 +2,8 @@
 #![no_main]
 #![feature(panic_info_message)]
 
+use core::slice::SliceIndex;
+
 core::arch::global_asm!(include_str!("asm/entry.S"));
 
 mod consts;
@@ -51,7 +53,7 @@ fn abort() -> ! {
 #[no_mangle]
 fn kmain() {
 	if proc::cpuid() == 0 {
-		mm::kalloc::kinit();
+		mm::kinit();
 		uart::uartinit();
 	}
 	println!("current cpu id is {}", proc::cpuid());
@@ -59,11 +61,13 @@ fn kmain() {
 	if proc::cpuid() != 0 {
 		return
 	}
-	println!("we have {} page now", mm::kalloc::kcount());
-	let frame = mm::kalloc::kalloc().unwrap();
-	println!("we have {} page now", mm::kalloc::kcount());
-	mm::kalloc::kfree(frame);
-	println!("we have {} page now", mm::kalloc::kcount());
+	println!("we have {} page now", mm::kcount());
+	{
+        let mut x = mm::KBox::<usize>::new().unwrap();
+        *x = 1;
+        println!("we have {} page now", mm::kcount());
+	}
+	println!("we have {} page now", mm::kcount());
 
 	// println!("xv6-rust kernel is booting");
 

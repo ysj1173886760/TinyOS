@@ -1,4 +1,9 @@
-pub mod kalloc;
+pub use kalloc::{kalloc, kcount, kfree, kinit};
+pub use kbox::KBox;
+
+mod kalloc;
+mod pagetable;
+mod kbox;
 
 const PGSIZE: usize = 4096;
 const PGSHIFT: u8 = 12;

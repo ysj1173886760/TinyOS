@@ -51,6 +51,7 @@ fn abort() -> ! {
 #[no_mangle]
 fn kmain() {
 	if proc::cpuid() == 0 {
+		mm::kalloc::kinit();
 		uart::uartinit();
 	}
 	println!("current cpu id is {}", proc::cpuid());
@@ -58,6 +59,11 @@ fn kmain() {
 	if proc::cpuid() != 0 {
 		return
 	}
+	println!("we have {} page now", mm::kalloc::kcount());
+	let frame = mm::kalloc::kalloc().unwrap();
+	println!("we have {} page now", mm::kalloc::kcount());
+	mm::kalloc::kfree(frame);
+	println!("we have {} page now", mm::kalloc::kcount());
 
 	// println!("xv6-rust kernel is booting");
 

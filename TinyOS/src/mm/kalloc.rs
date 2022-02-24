@@ -82,3 +82,16 @@ pub fn kalloc() -> Option<NonNull<Frame>> {
         None => None,
     }
 }
+
+pub fn kcount() -> usize {
+    let head = KMEM.lock();
+    let mut current = &*head;
+    let mut count = 0;
+    while let Some(frame) = current.next {
+        count += 1;
+        unsafe {
+            current = frame.as_ref();
+        }
+    }
+    count
+}

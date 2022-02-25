@@ -1,6 +1,6 @@
 use crate::consts::riscv::{MAXVA, SATP_SV39, SV39FLAGLEN};
 
-use super::{PGSHIFT, pg_round_down, KBox};
+use super::{PGSHIFT, pg_round_down, KBox, PGSIZE, kfree};
 
 // use bitflags::bitflags;
 
@@ -30,8 +30,25 @@ impl PageTableEntry {
     }
 
     #[inline]
+    fn is_user(&self) -> bool {
+        self.data & (PteFlag::U as usize) > 0
+    }
+
+    // because pa-entrys will either have X flag(text), or have W flag(data)
+    // if an entry only has valid flag, then it means this entry is pointing to another pagetable, but not pa
+    #[inline]
+    fn is_page_table(&self) -> bool {
+        self.is_valid() && (self.data & (PteFlag::X as usize | PteFlag::R as usize | PteFlag::W as usize)) > 0
+    }
+
+    #[inline]
     fn as_page_table(&self) -> *mut PageTable {
         ((self.data >> SV39FLAGLEN) << PGSHIFT) as *mut PageTable
+    }
+
+    #[inline]
+    fn as_pa(&self) -> usize {
+        ((self.data >> SV39FLAGLEN) << PGSHIFT) as usize
     }
 
     #[inline]
@@ -85,11 +102,18 @@ impl PageTable {
         SATP_SV39 | ((&self as *const _ as usize) >> PGSHIFT)
     }
 
-    pub fn map_pages(&mut self, va: usize, size: usize, pa: usize, perm: usize) -> Result<(), &'static str> {
-        let last = va + size;
-        Ok(())
-    }
-
+    // Return the address of the PTE in page table pagetable
+    // that corresponds to virtual address va.  If alloc!=0,
+    // create any required page-table pages.
+    //
+    // The risc-v Sv39 scheme has three levels of page-table
+    // pages. A page-table page contains 512 64-bit PTEs.
+    // A 64-bit virtual address is split into five fields:
+    //   39..63 -- must be zero.
+    //   30..38 -- 9 bits of level-2 index.
+    //   21..29 -- 9 bits of level-1 index.
+    //   12..20 -- 9 bits of level-0 index.
+    //    0..11 -- 12 bits of byte offset within the page.
     pub fn walk(&mut self, va: usize, alloc: bool) -> Option<&mut PageTableEntry> {
         if va > MAXVA {
             panic!("walk");
@@ -122,5 +146,84 @@ impl PageTable {
             }
         }
         None
+    }
+
+    // Look up a virtual address, return the physical address,
+    // or 0 if not mapped.
+    // Can only be used to look up user pages.
+    pub fn walkaddr(&mut self, va: usize) -> Option<usize> {
+        if va > MAXVA {
+            panic!("walkaddr");
+        }
+
+        let pte = self.walk(va, false);
+        match pte {
+            None => None,
+            Some(entry) => {
+                if !entry.is_valid() {
+                    return None;
+                }
+                if !entry.is_user() {
+                    return None;
+                }
+                Some(entry.as_pa())
+            },
+        }
+    }
+
+    // Create PTEs for virtual addresses starting at va that refer to
+    // physical addresses starting at pa. va and size might not
+    // be page-aligned. Returns 0 on success, -1 if walk() couldn't
+    // allocate a needed page-table page.
+    pub fn map_pages(&mut self, va: usize, size: usize, mut pa: usize, perm: usize) -> Result<(), &'static str> {
+        if size == 0 {
+            panic!("mappages: size");
+        }
+
+        let mut a = pg_round_down(va);
+        let last = pg_round_down(va + size - 1);
+
+        loop {
+            let pte;
+            match self.walk(a, true) {
+                Some(entry) => pte = entry,
+                None => return Err("walk failed"),
+            }
+
+            if pte.is_valid() {
+                panic!("mappages: remap");
+            }
+
+            pte.write_perm(pa, perm);
+
+            if a == last {
+                break;
+            }
+
+            a += PGSIZE;
+            pa += PGSIZE;
+        }
+
+        Ok(())
+    }
+
+    // Recursively free page-table pages.
+    // All leaf mappings must already have been removed.
+    pub fn freewalk(&mut self) {
+        for i in 0..512 {
+            let entry = &mut self.data[i];
+            if entry.is_page_table() {
+                unsafe {
+                    let child = &mut *entry.as_page_table();
+                    child.freewalk();
+                }
+                entry.write_zero();
+            } else if entry.is_valid() {
+                // we shouldn't touch the leaf since all of it has already been freed
+                panic!("freewalk: leaf");
+            }
+        }
+        // free the current pagetable now
+        // TODO: move to vm
     }
 }

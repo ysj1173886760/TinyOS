@@ -2,9 +2,9 @@
 #![no_main]
 #![feature(panic_info_message)]
 
-use core::slice::SliceIndex;
-
 core::arch::global_asm!(include_str!("asm/entry.S"));
+core::arch::global_asm!(include_str!("asm/kernelvec.S"));
+core::arch::global_asm!(include_str!("asm/trampoline.S"));
 
 mod consts;
 mod uart;
@@ -52,12 +52,14 @@ fn abort() -> ! {
 // ///////////////////////////////////
 #[no_mangle]
 fn kmain() {
+    // init procedure is here
 	if proc::cpuid() == 0 {
-		mm::kinit();
 		uart::uartinit();
+        println!("xv6-rust is booting");
+		mm::kinit();
+        mm::kvminit();
+        mm::kvminithart();
 	}
-	println!("current cpu id is {}", proc::cpuid());
-
 	if proc::cpuid() != 0 {
 		return
 	}

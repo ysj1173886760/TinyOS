@@ -1,8 +1,5 @@
 use crate::consts::riscv::{MAXVA, SATP_SV39, SV39FLAGLEN};
-
-use super::{PGSHIFT, pg_round_down, KBox, PGSIZE, kfree};
-
-// use bitflags::bitflags;
+use super::{PGSHIFT, pg_round_down, KBox, PGSIZE};
 
 #[repr(usize)]
 pub enum PteFlag {
@@ -19,50 +16,50 @@ pub enum PteFlag {
 // transparent allow us to convert entry to data
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-struct PageTableEntry {
+pub struct PageTableEntry {
     data: usize,
 }
 
 impl PageTableEntry {
     #[inline]
-    fn is_valid(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         self.data & (PteFlag::V as usize) > 0
     }
 
     #[inline]
-    fn is_user(&self) -> bool {
+    pub fn is_user(&self) -> bool {
         self.data & (PteFlag::U as usize) > 0
     }
 
     // because pa-entrys will either have X flag(text), or have W flag(data)
     // if an entry only has valid flag, then it means this entry is pointing to another pagetable, but not pa
     #[inline]
-    fn is_page_table(&self) -> bool {
+    pub fn is_page_table(&self) -> bool {
         self.is_valid() && (self.data & (PteFlag::X as usize | PteFlag::R as usize | PteFlag::W as usize)) > 0
     }
 
     #[inline]
-    fn as_page_table(&self) -> *mut PageTable {
+    pub fn as_page_table(&self) -> *mut PageTable {
         ((self.data >> SV39FLAGLEN) << PGSHIFT) as *mut PageTable
     }
 
     #[inline]
-    fn as_pa(&self) -> usize {
+    pub fn as_pa(&self) -> usize {
         ((self.data >> SV39FLAGLEN) << PGSHIFT) as usize
     }
 
     #[inline]
-    fn write_zero(&mut self) {
+    pub fn write_zero(&mut self) {
         self.data = 0;
     }
 
     #[inline]
-    fn write(&mut self, pa: usize) {
+    pub fn write(&mut self, pa: usize) {
         self.data = ((pa >> PGSHIFT) << SV39FLAGLEN) | (PteFlag::V as usize);
     }
 
     #[inline]
-    fn write_perm(&mut self, pa: usize, perm: usize) {
+    pub fn write_perm(&mut self, pa: usize, perm: usize) {
         self.data = ((pa >> PGSHIFT) << SV39FLAGLEN) | (perm | PteFlag::V as usize);
     }
 
@@ -82,7 +79,7 @@ fn px(level: usize, va: usize) -> usize {
 
 #[repr(C, align(4096))]
 pub struct PageTable {
-    data: [PageTableEntry; 512],
+    pub data: [PageTableEntry; 512],
 }
 
 impl PageTable {
@@ -99,7 +96,9 @@ impl PageTable {
     }
 
     pub unsafe fn as_satp(&self) -> usize {
-        SATP_SV39 | ((&self as *const _ as usize) >> PGSHIFT)
+        // a trap here, you shouldn't use &self's address, instead, you should use self's address
+        // because self is a reference it's self
+        SATP_SV39 | ((self as *const _ as usize) >> PGSHIFT)
     }
 
     // Return the address of the PTE in page table pagetable
@@ -145,28 +144,28 @@ impl PageTable {
                 }
             }
         }
-        None
+        Some(&mut pgtbl.data[px(0, va)])
     }
 
     // Look up a virtual address, return the physical address,
     // or 0 if not mapped.
     // Can only be used to look up user pages.
-    pub fn walkaddr(&mut self, va: usize) -> Option<usize> {
+    pub fn walkaddr(&mut self, va: usize) -> Result<usize, &'static str> {
         if va > MAXVA {
             panic!("walkaddr");
         }
 
         let pte = self.walk(va, false);
         match pte {
-            None => None,
+            None => Err("failed to find va"),
             Some(entry) => {
                 if !entry.is_valid() {
-                    return None;
+                    return Err("pte is not valid");
                 }
                 if !entry.is_user() {
-                    return None;
+                    return Err("pte is not user pages");
                 }
-                Some(entry.as_pa())
+                Ok(entry.as_pa())
             },
         }
     }
@@ -205,25 +204,5 @@ impl PageTable {
         }
 
         Ok(())
-    }
-
-    // Recursively free page-table pages.
-    // All leaf mappings must already have been removed.
-    pub fn freewalk(&mut self) {
-        for i in 0..512 {
-            let entry = &mut self.data[i];
-            if entry.is_page_table() {
-                unsafe {
-                    let child = &mut *entry.as_page_table();
-                    child.freewalk();
-                }
-                entry.write_zero();
-            } else if entry.is_valid() {
-                // we shouldn't touch the leaf since all of it has already been freed
-                panic!("freewalk: leaf");
-            }
-        }
-        // free the current pagetable now
-        // TODO: move to vm
     }
 }

@@ -181,3 +181,12 @@ pub fn r_mhartid() -> usize {
         return x;
     }
 }
+
+// flush the TLB.
+#[inline]
+pub fn sfence_vma() {
+    // the zero, zero means flush all TLB entries.
+    unsafe {
+        asm!("sfence.vma zero, zero");
+    }
+}

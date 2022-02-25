@@ -1,12 +1,15 @@
 pub use kalloc::{kalloc, kcount, kfree, kinit};
 pub use kbox::KBox;
+pub use pagetable::PageTable;
+pub use vm::{kvminit, kvminithart};
 
 mod kalloc;
 mod pagetable;
 mod kbox;
+mod vm;
 
-const PGSIZE: usize = 4096;
-const PGSHIFT: usize = 12;
+pub const PGSIZE: usize = 4096;
+pub const PGSHIFT: usize = 12;
 
 #[inline]
 fn pg_round_up(addr: usize) -> usize {

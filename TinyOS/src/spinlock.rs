@@ -5,7 +5,7 @@ use core::sync::atomic::fence;
 use core::ops::{Deref, DerefMut, Drop};
 
 use crate::riscv;
-use crate::proc;
+use crate::process::{cpuid, mycpu};
 
 pub struct SpinLock<T> {
     locked: AtomicBool,
@@ -32,7 +32,7 @@ impl<T> SpinLock<T> {
 
 impl<T> SpinLock<T> {
     fn holding(&self) -> bool {
-        return self.locked.load(Ordering::Relaxed) && self.cpu_id.get() == proc::cpuid() as isize;
+        return self.locked.load(Ordering::Relaxed) && self.cpu_id.get() == cpuid() as isize;
     }
 
     fn acquire(&self) {
@@ -45,7 +45,7 @@ impl<T> SpinLock<T> {
         // use memory fence anyway
         fence(Ordering::SeqCst);
 
-        self.cpu_id.set(proc::cpuid() as isize);
+        self.cpu_id.set(cpuid() as isize);
         // i didn't reset lock->cpu_id here, because we will only read cpu_id when we acquired the lock
     }
 
@@ -99,7 +99,7 @@ fn push_off() {
     riscv::intr_off();
     let mut cpu;
     unsafe {
-        cpu = &mut *proc::mycpu();
+        cpu = &mut *mycpu();
     }
     if cpu.noff == 0 {
         cpu.intena = old;
@@ -110,7 +110,7 @@ fn push_off() {
 fn pop_off() {
     let mut cpu;
     unsafe {
-        cpu = &mut *proc::mycpu();
+        cpu = &mut *mycpu();
     }
     
     // we shouldn't turn on interrupt until noff is 0

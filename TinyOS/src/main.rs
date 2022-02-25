@@ -8,7 +8,7 @@ core::arch::global_asm!(include_str!("asm/trampoline.S"));
 
 mod consts;
 mod uart;
-mod proc;
+mod process;
 mod riscv;
 mod spinlock;
 mod printf;
@@ -53,14 +53,14 @@ fn abort() -> ! {
 #[no_mangle]
 fn kmain() {
     // init procedure is here
-	if proc::cpuid() == 0 {
+	if process::cpuid() == 0 {
 		uart::uartinit();
         println!("xv6-rust is booting");
 		mm::kinit();
         mm::kvminit();
         mm::kvminithart();
 	}
-	if proc::cpuid() != 0 {
+	if process::cpuid() != 0 {
 		return
 	}
 	println!("we have {} page now", mm::kcount());

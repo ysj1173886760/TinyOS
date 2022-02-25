@@ -18,10 +18,15 @@ impl Cpu {
     }
 }
 
+// Must be called with interrupts disabled,
+// to prevent race with process being moved
+// to a different CPU.
 pub fn cpuid() -> usize {
     return riscv::r_tp();
 }
 
+// Return this CPU's cpu struct.
+// Interrupts must be disabled.
 pub fn mycpu() -> *mut Cpu {
     unsafe {
         let id = cpuid();

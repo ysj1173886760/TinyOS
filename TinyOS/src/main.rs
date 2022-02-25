@@ -59,7 +59,10 @@ fn kmain() {
 		mm::kinit();
         mm::kvminit();
         mm::kvminithart();
-        process::procinit();
+
+        unsafe {
+            process::proc_manager.proc_init();
+        }
 	}
 	if process::cpuid() != 0 {
 		return

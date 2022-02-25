@@ -254,6 +254,8 @@ impl PageTable {
                     panic!("uvmunmap: walk");
                 }
             }
+
+            a += PGSIZE;
         }
     }
 }

@@ -1,5 +1,5 @@
-use crate::consts::riscv::{MAXVA, SATP_SV39, SV39FLAGLEN};
-use super::{PGSHIFT, pg_round_down, KBox, PGSIZE};
+use crate::consts::{riscv::{MAXVA, SATP_SV39, SV39FLAGLEN}};
+use super::{PGSHIFT, pg_round_down, KBox, PGSIZE, kfree};
 
 #[repr(usize)]
 pub enum PteFlag {
@@ -14,6 +14,7 @@ pub enum PteFlag {
 }
 
 // transparent allow us to convert entry to data
+#[derive(Debug)]
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct PageTableEntry {
@@ -29,6 +30,11 @@ impl PageTableEntry {
     #[inline]
     pub fn is_user(&self) -> bool {
         self.data & (PteFlag::U as usize) > 0
+    }
+
+    #[inline]
+    pub fn flags(&self) -> usize {
+        self.data & 0x3FF
     }
 
     // because pa-entrys will either have X flag(text), or have W flag(data)
@@ -77,6 +83,7 @@ fn px(level: usize, va: usize) -> usize {
     (va >> px_shift(level)) & PXMASK
 }
 
+#[derive(Debug)]
 #[repr(C, align(4096))]
 pub struct PageTable {
     pub data: [PageTableEntry; 512],
@@ -204,5 +211,49 @@ impl PageTable {
         }
 
         Ok(())
+    }
+
+    // create an empty user page table.
+    // returns 0 if out of memory.
+    pub fn uvm_create() -> Option<KBox<PageTable>> {
+        match KBox::<PageTable>::new() {
+            Some(mut pgtbl) => {
+                pgtbl.clear();
+                Some(pgtbl)
+            },
+            None => None,
+        }
+    }
+
+    // Remove npages of mappings starting from va. va must be
+    // page-aligned. The mappings must exist.
+    // Optionally free the physical memory.
+    pub fn uvm_unmap(&mut self, va: usize, npages: usize, do_free: bool) {
+        if va % PGSIZE != 0 {
+            panic!("uvmunmap: page not aligned");
+        }
+
+        let mut a = va;
+        while a < va + npages * PGSIZE {
+            let pte = self.walk(a, false);
+            
+            match pte {
+                Some(entry) => {
+                    if !entry.is_valid() {
+                        panic!("uvmunmap: not mapped");
+                    }
+                    if entry.flags() == PteFlag::V as usize {
+                        panic!("uvmunmap: not leaf");
+                    }
+                    if do_free {
+                        kfree(entry.as_pa());
+                    }
+                    entry.write_zero();
+                },
+                None => {
+                    panic!("uvmunmap: walk");
+                }
+            }
+        }
     }
 }

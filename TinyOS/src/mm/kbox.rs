@@ -4,6 +4,7 @@ use core::mem;
 
 use crate::mm::{kalloc, kfree};
 
+#[derive(Debug)]
 pub struct KBox<T>(NonNull<T>);
 
 impl<T> KBox<T> {

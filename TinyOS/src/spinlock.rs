@@ -7,6 +7,7 @@ use core::ops::{Deref, DerefMut, Drop};
 use crate::riscv;
 use crate::process::{cpuid, mycpu};
 
+#[derive(Debug)]
 pub struct SpinLock<T> {
     locked: AtomicBool,
     data: UnsafeCell<T>,
@@ -67,6 +68,11 @@ impl<T> SpinLock<T> {
             spinlock: &self,
             data: unsafe { &mut *self.data.get() }
         }
+    }
+
+    // leak the data, only when we guarantee the resource will be accessed by single thread can we use this
+    pub fn leak(&self) -> &mut T {
+        unsafe { &mut *self.data.get() }
     }
 }
 

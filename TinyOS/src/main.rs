@@ -59,6 +59,7 @@ fn kmain() {
 		mm::kinit();
         mm::kvminit();
         mm::kvminithart();
+        process::procinit();
 	}
 	if process::cpuid() != 0 {
 		return
@@ -70,6 +71,7 @@ fn kmain() {
         println!("we have {} page now", mm::kcount());
 	}
 	println!("we have {} page now", mm::kcount());
+
 
 	// println!("xv6-rust kernel is booting");
 

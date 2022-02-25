@@ -1,6 +1,6 @@
-use crate::{consts::memlayout::{UART0, VIRTIO0, PLIC, KERNBASE, PHYSTOP, TRAMPOLINE}, riscv::{w_satp, sfence_vma}};
+use crate::{consts::{memlayout::{UART0, VIRTIO0, PLIC, KERNBASE, PHYSTOP, TRAMPOLINE, KSTACK}, param::NPROC}, riscv::{w_satp, sfence_vma}};
 
-use super::{PageTable, kfree, PGSIZE, pagetable::PteFlag};
+use super::{PageTable, kfree, PGSIZE, pagetable::PteFlag, kalloc};
 
 static mut kernel_pagetable: PageTable = PageTable::empty();
 
@@ -43,6 +43,7 @@ pub fn kvmmap(va: usize, pa: usize, size: usize, perm: usize) {
 }
 
 pub fn kvminit() {
+    crate::println!("initializing direct mapping");
     // uart registers
     kvmmap(UART0, UART0, PGSIZE, PteFlag::R as usize | PteFlag::W as usize);
 
@@ -63,7 +64,7 @@ pub fn kvminit() {
     kvmmap(TRAMPOLINE, trampoline as usize, PGSIZE, PteFlag::R as usize | PteFlag::X as usize);
 
     // map kernel stacks
-    // TODO: map kernel stacks
+    proc_mapstacks();
 }
 
 pub fn kvminithart() {
@@ -71,4 +72,18 @@ pub fn kvminithart() {
         w_satp(kernel_pagetable.as_satp());
     }
     sfence_vma();
+}
+
+pub fn proc_mapstacks() {
+    crate::println!("mapping kernel stasks");
+    for i in 0..NPROC {
+        match kalloc() {
+            Some(pa) => {
+                kvmmap(KSTACK(i), pa, PGSIZE, PteFlag::R as usize | PteFlag::W as usize);
+            },
+            None => {
+                panic!("proc_mapstacks");
+            }
+        }
+    }
 }

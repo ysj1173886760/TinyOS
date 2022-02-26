@@ -5,7 +5,7 @@ pub use context::Context;
 pub use trapframe::TrapFrame;
 pub use proc::{Proc, ProcState};
 
-use crate::{consts::{param::NPROC, memlayout::KSTACK}, spinlock::SpinLock, mm::kfree};
+use crate::{consts::{param::NPROC, memlayout::KSTACK}, spinlock::{SpinLock, push_off, pop_off}, mm::kfree};
 
 mod proc;
 mod cpu;
@@ -100,4 +100,40 @@ impl ProcManager {
         None
     }
 
+    pub fn user_init(&mut self) {
+        let p = self.allocproc().expect("failed to alloc first process");
+        
+    }
+
+}
+
+// A fork child's very first scheduling by scheduler()
+// will swtch to forkret.
+fn fork_ret() {
+    static mut first: bool = true;
+
+    // Still holding p->lock from scheduler.
+    // release lock here
+
+    unsafe {
+        if first {
+            // File system initialization must be run in the context of a
+            // regular process (e.g., because it calls sleep), and thus cannot
+            // be run from main().
+            first = false;
+        }
+    }
+
+    // user_trap_ret();
+}
+
+// Return the current struct proc *, or zero if none.
+pub fn myproc() -> *mut Proc {
+    unsafe {
+        push_off();
+        let cpu = mycpu();
+        let proc = (*cpu).proc;
+        pop_off();
+        return proc;
+    }
 }

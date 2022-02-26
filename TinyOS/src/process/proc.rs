@@ -1,5 +1,5 @@
 use crate::{mm::{KBox, PageTable, PteFlag, PGSIZE, kalloc, uvm_free, kfree}, spinlock::SpinLock};
-use super::{TrapFrame, Context};
+use super::{TrapFrame, Context, fork_ret};
 use crate::consts::memlayout::{TRAMPOLINE, TRAPFRAME};
 
 use core::ptr;
@@ -105,7 +105,7 @@ impl Proc {
     pub fn init_context(&mut self) {
         self.context.clear();
         // TODO: add forkret
-        // self.context.ra = forkret
+        self.context.set_ra(fork_ret as usize); 
         self.context.set_sp(self.kstack + PGSIZE);
     }
 
@@ -141,4 +141,36 @@ impl Proc {
         self.killed = false;
         self.state = ProcState::UNUSED;
     }
+
+    // Set up first user process.
+    pub fn user_init(&mut self) {
+        // allocate one user page and copy init's instructions
+        // and data into it.
+        self.pagetable.as_mut().unwrap().uvminit(&INITCODE);
+        self.sz = PGSIZE;
+
+        // prepare for the very first return from kernel
+        let trapframe = unsafe {&mut *self.trapframe};
+        trapframe.epc = 0;      // user program counter
+        trapframe.sp = PGSIZE;  // user stack pointer
+
+        let init_name = b"initcode\0";
+        unsafe {
+            ptr::copy_nonoverlapping(init_name.as_ptr(), self.name.as_mut_ptr(), init_name.len());
+        }
+
+        //TODO: set current working directory
+
+        self.state = ProcState::RUNNABLE;
+    }
 }
+
+static INITCODE: [u8; 51] = [
+    0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x05, 0x02,
+    0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x05, 0x02,
+    0x9d, 0x48, 0x73, 0x00, 0x00, 0x00, 0x89, 0x48,
+    0x73, 0x00, 0x00, 0x00, 0xef, 0xf0, 0xbf, 0xff,
+    0x2f, 0x69, 0x6e, 0x69, 0x74, 0x00, 0x00, 0x01,
+    0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00   
+];

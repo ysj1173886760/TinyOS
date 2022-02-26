@@ -1,5 +1,6 @@
 use crate::consts::{riscv::{MAXVA, SATP_SV39, SV39FLAGLEN}};
-use super::{PGSHIFT, pg_round_down, KBox, PGSIZE, kfree};
+use super::{PGSHIFT, pg_round_down, KBox, PGSIZE, kfree, kalloc};
+use core::ptr;
 
 #[repr(usize)]
 pub enum PteFlag {
@@ -279,5 +280,31 @@ impl PageTable {
 
     pub fn print(&self) {
         self.print_helper(2);
+    }
+
+    pub fn uvminit(&mut self, code: &[u8]) {
+        if code.len() >= PGSIZE {
+            panic!("inituvm: more than a page");
+        }
+
+        match kalloc() {
+            Some(ptr) => {
+                unsafe {
+                    // memset to zero
+                    ptr::write_bytes(ptr as *mut u8, 0, PGSIZE);
+                }
+                self.map_pages(0, PGSIZE, ptr, PteFlag::R as usize |
+                                                                PteFlag::W as usize |
+                                                                PteFlag::X as usize |
+                                                                PteFlag::U as usize);
+                unsafe {
+                    // copy the code
+                    ptr::copy_nonoverlapping(code.as_ptr(), ptr as *mut u8, code.len());
+                }
+            },
+            None => {
+                panic!("failed to allocate page for initcode");
+            }
+        }
     }
 }

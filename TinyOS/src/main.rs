@@ -16,6 +16,7 @@ mod spinlock;
 mod printf;
 mod mm;
 mod init_core;
+mod trap;
 
 // ///////////////////////////////////
 // / LANGUAGE STRUCTURES / FUNCTIONS

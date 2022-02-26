@@ -100,7 +100,7 @@ impl<'a, T> Drop for SpinLockGuard<'a, T> {
     }
 }
 
-fn push_off() {
+pub fn push_off() {
     let old = riscv::intr_get();
     riscv::intr_off();
     let mut cpu;
@@ -113,7 +113,7 @@ fn push_off() {
     cpu.noff += 1;
 }
 
-fn pop_off() {
+pub fn pop_off() {
     let mut cpu;
     unsafe {
         cpu = &mut *mycpu();

@@ -1,12 +1,19 @@
 use crate::consts::param::NCPU;
 use crate::riscv;
 
-static mut CPUS: [Cpu; NCPU] = [Cpu::new(); NCPU];
+use super::{Context, Proc};
 
-#[derive(Copy, Clone)]
+use core::ptr;
+
+const DEFAULT: Cpu = Cpu::new();
+static mut CPUS: [Cpu; NCPU] = [DEFAULT; NCPU];
+
+// lifetime specifier really annoys me, i will use raw pointer first
 pub struct Cpu {
     pub noff: u8,
     pub intena: bool,
+    pub context: Context,
+    pub proc: *mut Proc,
 }
 
 impl Cpu {
@@ -14,6 +21,8 @@ impl Cpu {
         Cpu {
             noff: 0,
             intena: false,
+            context: Context::new(),
+            proc: ptr::null_mut(),
         }
     }
 }

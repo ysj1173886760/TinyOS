@@ -1,39 +1,41 @@
-// sstatus
-const SSTATUS_SIE: usize = 1 << 1;
-
 use core::arch::asm;
 
+// Supervisor Status Register, sstatus
+pub const SSTATUS_SPP: usize = 1 << 8;  // Previous mode, 1=Supervisor, 0=User
+pub const SSTATUS_SPIE: usize = 1 << 5; // Supervisor Previous Interrupt Enable
+pub const SSTATUS_UPIE: usize = 1 << 4; // User Previous Interrupt Enable
+pub const SSTATUS_SIE: usize = 1 << 1;  // Supervisor Interrupt Enable
+pub const SSTATUS_UIE: usize = 1 << 0;  // User Interrupt Enable
+
 #[inline]
-unsafe fn r_sstatus() -> usize {
-    let ret: usize;
-    asm!("csrr {}, sstatus", out(reg) ret);
-    ret
+pub fn r_sstatus() -> usize {
+    unsafe {
+        let ret: usize;
+        asm!("csrr {}, sstatus", out(reg) ret);
+        ret
+    }
 }
 
 #[inline]
-unsafe fn w_sstatus(x: usize) {
-    asm!("csrw sstatus, {}", in(reg) x);
+pub fn w_sstatus(x: usize) {
+    unsafe {
+        asm!("csrw sstatus, {}", in(reg) x);
+    }
 }
 
 // disable device interrupts
 pub fn intr_off() {
-    unsafe {
-        w_sstatus(r_sstatus() & !SSTATUS_SIE);
-    }
+    w_sstatus(r_sstatus() & !SSTATUS_SIE);
 }
 
 // enable device interrupts
 pub fn intr_on() {
-    unsafe {
-        w_sstatus(r_sstatus() | SSTATUS_SIE);
-    }
+    w_sstatus(r_sstatus() | SSTATUS_SIE);
 }
 
 pub fn intr_get() -> bool {
-    unsafe {
-        let x: usize = r_sstatus();
-        return (x & SSTATUS_SIE) != 0;
-    }
+    let x: usize = r_sstatus();
+    return (x & SSTATUS_SIE) != 0;
 }
 
 // read and write tp, the thread pointer, which holds
@@ -188,5 +190,79 @@ pub fn sfence_vma() {
     // the zero, zero means flush all TLB entries.
     unsafe {
         asm!("sfence.vma zero, zero");
+    }
+}
+
+// Supervisor Trap-Vector Base Address
+// low two bits are mode.
+#[inline]
+pub fn w_stvec(x: usize) {
+    unsafe {
+        asm!("csrw stvec, {}", in(reg) x);
+    }
+}
+
+#[inline]
+pub fn r_stvec() -> usize {
+    unsafe {
+        let x;
+        asm!("csrr {}, stvec", out(reg) x);
+        return x;
+    }
+}
+
+// Machine-mode interrupt vector
+#[inline]
+pub fn w_mtvec(x: usize) {
+    unsafe {
+        asm!("csrw mtvec, {}", in(reg) x);
+    }
+}
+
+#[inline]
+pub fn r_mtvec() -> usize {
+    unsafe {
+        let x;
+        asm!("csrr {}, mtvec", out(reg) x);
+        return x;
+    }
+}
+
+// supervisor exception program counter, holds the
+// instruction address to which a return from
+// exception will go.
+#[inline]
+pub fn w_sepc(x: usize) {
+    unsafe {
+        asm!("csrw sepc, {}", in(reg) x);
+    }
+}
+
+#[inline]
+pub fn r_sepc() -> usize {
+    unsafe {
+        let x;
+        asm!("csrr {}, sepc", out(reg) x);
+        return x;
+    }
+}
+
+// supervisor trap cause
+#[inline]
+pub fn r_scause() -> usize {
+    unsafe {
+        let x;
+        asm!("csrr {}, scause", out(reg) x);
+        return x;
+    }
+}
+
+// supervisor trap value
+#[inline]
+pub fn r_stval() -> usize {
+    unsafe {
+        let x;
+        asm!("csrr {}, stval", out(reg) x);
+        return x;
     }
 }

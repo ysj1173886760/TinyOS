@@ -2,6 +2,8 @@
 #![no_main]
 #![feature(panic_info_message)]
 
+use crate::process::proc_manager;
+
 core::arch::global_asm!(include_str!("asm/entry.S"));
 core::arch::global_asm!(include_str!("asm/kernelvec.S"));
 core::arch::global_asm!(include_str!("asm/trampoline.S"));
@@ -74,6 +76,13 @@ fn kmain() {
         println!("we have {} page now", mm::kcount());
 	}
 	println!("we have {} page now", mm::kcount());
+
+    unsafe {
+        let p = proc_manager.allocproc().unwrap();
+        let pgtbl = p.pagetable.as_ref().unwrap();
+        pgtbl.print();
+        p.free();
+    }
 
 
 	// println!("xv6-rust kernel is booting");

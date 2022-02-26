@@ -41,7 +41,7 @@ impl PageTableEntry {
     // if an entry only has valid flag, then it means this entry is pointing to another pagetable, but not pa
     #[inline]
     pub fn is_page_table(&self) -> bool {
-        self.is_valid() && (self.data & (PteFlag::X as usize | PteFlag::R as usize | PteFlag::W as usize)) > 0
+        self.is_valid() && (self.data & (PteFlag::X as usize | PteFlag::R as usize | PteFlag::W as usize)) == 0
     }
 
     #[inline]
@@ -260,12 +260,24 @@ impl PageTable {
     }
 
     fn print_helper(&self, level: usize) {
+        for i in 0..self.data.len() {
+            if self.data[i].is_valid() {
+                crate::print!("{} ", i);
+                for j in 0..(3 - level) {
+                    crate::print!("..");
+                }
+                crate::println!("{:#x}", self.data[i].as_pa());
 
+                if level > 0 {
+                    unsafe {
+                        (*self.data[i].as_page_table()).print_helper(level - 1);
+                    }
+                }
+            }
+        }
     }
 
     pub fn print(&self) {
-        for i in 0..self.data.len() {
-            
-        }
+        self.print_helper(2);
     }
 }

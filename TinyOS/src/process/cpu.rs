@@ -1,5 +1,6 @@
-use crate::consts::param::NCPU;
-use crate::riscv;
+use crate::process::{proc_manager, ProcState, myproc};
+use crate::{consts::param::NCPU, riscv::intr_on};
+use crate::riscv::{self, intr_get};
 
 use super::{Context, Proc};
 
@@ -24,6 +25,81 @@ impl Cpu {
             context: Context::new(),
             proc: ptr::null_mut(),
         }
+    }
+
+    pub unsafe fn scheduler(&mut self) -> ! {
+        extern "C" {
+            fn swtch(old: *mut Context, new: *mut Context);
+        }
+
+        loop {
+            // Avoid deadlock by ensuring that devices can interrupt.
+            intr_on();
+            match proc_manager.get_runnable() {
+                Some(p) => {
+                    // Switch to chosen process.  It is the process's job
+                    // to release its lock and then reacquire it
+                    // before jumping back to us.
+                    p.state = ProcState::RUNNING;
+                    self.proc = p as *mut Proc;
+                    swtch(&mut self.context as *mut Context,
+                          &mut p.context as *mut Context);
+                    
+                    // Process is done running for now.
+                    // It should have changed it's p->state before coming back
+                    self.proc = ptr::null_mut();
+                    p.lock.release();
+                }
+                None => {},
+            }
+        }
+    }
+
+    // Switch to scheduler.  Must hold only p->lock
+    // and have changed proc->state. Saves and restores
+    // intena because intena is a property of this
+    // kernel thread, not this CPU. It should
+    // be proc->intena and proc->noff, but that would
+    // break in the few places where a lock is held but
+    // there's no process.
+    pub fn sched(&mut self) {
+        extern "C" {
+            fn swtch(old: *mut Context, new: *mut Context);
+        }
+
+        let p = unsafe { &mut *myproc() };
+
+        if !p.lock.holding() {
+            panic!("sched p->lock");
+        }
+
+        // only hold p->lock, we ensure this property by checking noff
+        if self.noff != 1 {
+            panic!("sched locks");
+        }
+
+        if p.state == ProcState::RUNNING {
+            panic!("sched running");
+        }
+
+        if intr_get() {
+            panic!("sched interruptible");
+        }
+
+        let intena = self.intena;
+        unsafe {
+            swtch(&mut p.context as *mut Context, &mut self.context as *mut Context);
+        }
+        self.intena = intena;
+    }
+
+    // Give up the CPU for one scheduling round.
+    pub fn yield_cpu(&mut self) {
+        let p = unsafe { &mut *myproc() };
+        p.lock.acquire();
+        p.state = ProcState::RUNNABLE;
+        self.sched();
+        p.lock.release();
     }
 }
 

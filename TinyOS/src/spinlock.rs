@@ -32,7 +32,7 @@ impl<T> SpinLock<T> {
 }
 
 impl<T> SpinLock<T> {
-    fn holding(&self) -> bool {
+    pub fn holding(&self) -> bool {
         return self.locked.load(Ordering::Relaxed) && self.cpu_id.get() == cpuid() as isize;
     }
 

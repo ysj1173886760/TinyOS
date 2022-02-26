@@ -102,7 +102,26 @@ impl ProcManager {
 
     pub fn user_init(&mut self) {
         let p = self.allocproc().expect("failed to alloc first process");
-        
+
+    }
+
+    // find a runnable process
+    // used in scheduler
+    // return with p->lock held
+    pub fn get_runnable(&mut self) -> Option<&mut Proc> {
+        for i in 0..self.proc.len() {
+            let p = &mut self.proc[i];
+            p.lock.acquire();
+            match p.state {
+                ProcState::RUNNABLE => {
+                    return Some(&mut self.proc[i]);
+                },
+                _ => {},
+            }
+            p.lock.release();
+        }
+
+        None
     }
 
 }
@@ -114,6 +133,8 @@ fn fork_ret() {
 
     // Still holding p->lock from scheduler.
     // release lock here
+    let p = unsafe { & *myproc() };
+    p.lock.release();
 
     unsafe {
         if first {

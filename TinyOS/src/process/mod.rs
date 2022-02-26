@@ -1,9 +1,11 @@
+use core::ptr::null_mut;
+
 pub use cpu::{Cpu, cpuid, mycpu};
 pub use context::Context;
 pub use trapframe::TrapFrame;
 pub use proc::{Proc, ProcState};
 
-use crate::{consts::{param::NPROC, memlayout::KSTACK}, spinlock::SpinLock};
+use crate::{consts::{param::NPROC, memlayout::KSTACK}, spinlock::SpinLock, mm::kfree};
 
 mod proc;
 mod cpu;
@@ -73,13 +75,14 @@ impl ProcManager {
                     
                     // allocate a trapframe page
                     if p.alloc_trapframe() != Ok(()) {
-                        // freeproc
+                        p.free();
                         p.lock.release();
                         return None;
                     }
 
                     // An empty user page table
                     if p.create_proc_pagetable() != Ok(()) {
+                        p.free();
                         p.lock.release();
                         return None;
                     }
@@ -96,4 +99,5 @@ impl ProcManager {
         }
         None
     }
+
 }

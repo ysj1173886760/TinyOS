@@ -258,4 +258,14 @@ impl PageTable {
             a += PGSIZE;
         }
     }
+
+    fn print_helper(&self, level: usize) {
+
+    }
+
+    pub fn print(&self) {
+        for i in 0..self.data.len() {
+            
+        }
+    }
 }

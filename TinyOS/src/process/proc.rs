@@ -1,4 +1,4 @@
-use crate::{mm::{KBox, PageTable, PteFlag, PGSIZE, kalloc}, spinlock::SpinLock};
+use crate::{mm::{KBox, PageTable, PteFlag, PGSIZE, kalloc, uvm_free, kfree}, spinlock::SpinLock};
 use super::{TrapFrame, Context};
 use crate::consts::memlayout::{TRAMPOLINE, TRAPFRAME};
 
@@ -107,5 +107,38 @@ impl Proc {
         // TODO: add forkret
         // self.context.ra = forkret
         self.context.set_sp(self.kstack + PGSIZE);
+    }
+
+    // Free a process's page table, and free the
+    // physical memory it refers to.
+    pub fn free_pagetable(&mut self) {
+        let pagetable = self.pagetable.take();
+        match pagetable {
+            Some(mut pgtbl) => {
+                pgtbl.uvm_unmap(TRAMPOLINE, 1, false);
+                pgtbl.uvm_unmap(TRAPFRAME, 1, false);
+                uvm_free(pgtbl.into_raw(), self.sz);
+            },
+            None => {},
+        }
+    }
+
+    // free a proc structure and the data hanging from it,
+    // including user pages.
+    // p->lock must be held.
+    pub fn free(&mut self) {
+        if !self.trapframe.is_null() {
+            kfree(self.trapframe as usize);
+            self.trapframe = ptr::null_mut();
+        }
+
+        self.free_pagetable();
+
+        self.sz = 0;
+        self.pid = 0;
+        self.name[0] = 0;
+        self.channel = 0;
+        self.killed = false;
+        self.state = ProcState::UNUSED;
     }
 }

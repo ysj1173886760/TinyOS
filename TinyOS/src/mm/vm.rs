@@ -1,6 +1,6 @@
-use crate::{consts::{memlayout::{UART0, VIRTIO0, PLIC, KERNBASE, PHYSTOP, TRAMPOLINE, KSTACK}, param::NPROC}, riscv::{w_satp, sfence_vma}};
+use crate::{consts::{memlayout::{UART0, VIRTIO0, PLIC, KERNBASE, PHYSTOP, TRAMPOLINE, TRAPFRAME, KSTACK}, param::NPROC}, riscv::{w_satp, sfence_vma}};
 
-use super::{PageTable, kfree, PGSIZE, pagetable::PteFlag, kalloc};
+use super::{PageTable, kfree, PGSIZE, pagetable::PteFlag, kalloc, pg_round_up};
 
 static mut kernel_pagetable: PageTable = PageTable::empty();
 
@@ -20,6 +20,19 @@ pub unsafe fn freewalk(pgtbl: *mut PageTable) {
     }
     // free the current pagetable now
     kfree(pgtbl as usize);
+}
+
+// Free user memory pages,
+// then free page-table pages.
+pub fn uvm_free(pgtbl: *mut PageTable, sz: usize) {
+    if sz > 0 {
+        unsafe {
+            (*pgtbl).uvm_unmap(0, pg_round_up(sz) / PGSIZE, true)
+        }
+    }
+    unsafe {
+        freewalk(pgtbl);
+    }
 }
 
 // the kernel's page table.

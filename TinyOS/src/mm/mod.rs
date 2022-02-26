@@ -1,7 +1,7 @@
 pub use kalloc::{kalloc, kcount, kfree, kinit};
 pub use kbox::KBox;
 pub use pagetable::{PageTable, PteFlag};
-pub use vm::{kvminit, kvminithart};
+pub use vm::{kvminit, kvminithart, uvm_free};
 
 mod kalloc;
 mod pagetable;

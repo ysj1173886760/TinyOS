@@ -266,3 +266,12 @@ pub fn r_stval() -> usize {
         return x;
     }
 }
+
+#[inline]
+pub fn r_fp() -> usize {
+    unsafe {
+        let x;
+        asm!("mv {}, s0", out(reg) x);
+        return x;
+    }
+}

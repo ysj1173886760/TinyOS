@@ -84,7 +84,6 @@ fn px(level: usize, va: usize) -> usize {
     (va >> px_shift(level)) & PXMASK
 }
 
-#[derive(Debug)]
 #[repr(C, align(4096))]
 pub struct PageTable {
     pub data: [PageTableEntry; 512],

@@ -4,7 +4,6 @@ use crate::consts::memlayout::{TRAMPOLINE, TRAPFRAME};
 
 use core::ptr;
 
-#[derive(Debug)]
 #[derive(PartialEq, Eq)]
 pub enum ProcState {
     UNUSED,
@@ -15,7 +14,6 @@ pub enum ProcState {
     ZOMBIE,
 }
 
-#[derive(Debug)]
 pub struct Proc {
     pub lock: SpinLock<()>,
 
@@ -69,7 +67,6 @@ impl Proc {
             fn trampoline();
         }
 
-        //TODO: handle the failure and free the memory
         // map the trampoline code (for system call return)
         // at the highest user virtual address.
         // only the supervisor uses it, on the way

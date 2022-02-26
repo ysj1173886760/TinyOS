@@ -39,7 +39,7 @@ type FrameList = Frame;
 static KMEM: SpinLock<FrameList> = SpinLock::new(FrameList { next: None }, "kmem");
 
 unsafe fn free_range(start_addr: usize, end_addr: usize) {
-    let start = super::pg_round_up(start_addr);
+    let start_addr = super::pg_round_up(start_addr);
     for pa in (start_addr..end_addr).step_by(super::PGSIZE) {
         kfree(pa);
     }

@@ -2,11 +2,15 @@
 #![no_main]
 #![feature(panic_info_message)]
 
-use crate::process::proc_manager;
+use mm::pg_round_up;
+use riscv::r_fp;
+
+use crate::{process::{proc_manager, mycpu}, trap::trap_init_hart, mm::{kinit, kvminit, kvminithart, pg_round_down}, uart::uartinit};
 
 core::arch::global_asm!(include_str!("asm/entry.S"));
 core::arch::global_asm!(include_str!("asm/kernelvec.S"));
 core::arch::global_asm!(include_str!("asm/trampoline.S"));
+core::arch::global_asm!(include_str!("asm/swtch.S"));
 
 mod consts;
 mod uart;
@@ -50,6 +54,23 @@ fn abort() -> ! {
 	}
 }
 
+pub fn backtrace() {
+    let mut fp = r_fp();
+    let upper_bound = pg_round_up(fp);
+    let lower_bound = pg_round_down(fp);
+
+    crate::println!("backtrace:");
+
+    // when the current frame is at the top of the page, then we don't need to print ra any more
+    while fp < upper_bound && fp > lower_bound {
+        let ra_addr = fp - 8;
+        unsafe {
+            println!("{:#x}", *(ra_addr as *mut usize));
+            fp = *((fp - 16) as *mut usize);
+        }
+    }
+}
+
 // ///////////////////////////////////
 // / ENTRY POINT
 // ///////////////////////////////////
@@ -57,34 +78,27 @@ fn abort() -> ! {
 fn kmain() {
     // init procedure is here
 	if process::cpuid() == 0 {
-		uart::uartinit();
+
+        uartinit();
         println!("xv6-rust is booting");
-		mm::kinit();
-        mm::kvminit();
-        mm::kvminithart();
+        kinit();
+        kvminit();
+        // turn on paging
+        kvminithart();
+        // initialize kstack
 
-        unsafe {
-            process::proc_manager.proc_init();
-        }
-	}
-	if process::cpuid() != 0 {
+        unsafe { process::proc_manager.proc_init(); }
+        trap_init_hart();
+        unsafe { proc_manager.user_init(); }
+	} else {
 		return
-	}
-	println!("we have {} page now", mm::kcount());
-	{
-        let mut x = mm::KBox::<usize>::new().unwrap();
-        *x = 1;
-        println!("we have {} page now", mm::kcount());
-	}
-	println!("we have {} page now", mm::kcount());
-
-    unsafe {
-        let p = proc_manager.allocproc().unwrap();
-        let pgtbl = p.pagetable.as_ref().unwrap();
-        pgtbl.print();
-        p.free();
     }
 
+    unsafe {
+        let cpu = &mut *mycpu();
+        println!("{:?}", cpu);
+        cpu.scheduler();
+    }
 
 	// println!("xv6-rust kernel is booting");
 

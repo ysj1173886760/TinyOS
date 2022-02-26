@@ -5,12 +5,13 @@ pub use context::Context;
 pub use trapframe::TrapFrame;
 pub use proc::{Proc, ProcState};
 
-use crate::{consts::{param::NPROC, memlayout::KSTACK}, spinlock::{SpinLock, push_off, pop_off}, mm::kfree};
+use crate::{consts::{param::NPROC, memlayout::KSTACK}, spinlock::{SpinLock, push_off, pop_off}, mm::kfree, trap::usertrapret};
 
 mod proc;
 mod cpu;
 mod context;
 mod trapframe;
+mod syscall;
 
 pub static mut proc_manager: ProcManager = ProcManager::new();
 
@@ -102,7 +103,9 @@ impl ProcManager {
 
     pub fn user_init(&mut self) {
         let p = self.allocproc().expect("failed to alloc first process");
-
+        p.user_init();
+        p.state = ProcState::RUNNABLE;
+        p.lock.release();
     }
 
     // find a runnable process
@@ -145,7 +148,7 @@ fn fork_ret() {
         }
     }
 
-    // user_trap_ret();
+    usertrapret();
 }
 
 // Return the current struct proc *, or zero if none.

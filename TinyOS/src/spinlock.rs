@@ -4,7 +4,7 @@ use core::sync::atomic::Ordering;
 use core::sync::atomic::fence;
 use core::ops::{Deref, DerefMut, Drop};
 
-use crate::riscv;
+use crate::{riscv, backtrace};
 use crate::process::{cpuid, mycpu};
 
 #[derive(Debug)]
@@ -39,6 +39,7 @@ impl<T> SpinLock<T> {
     pub fn acquire(&self) {
         push_off();
         if self.holding() {
+            crate::println!("{}", self.name);
             panic!("acquire");
         }
         while self.locked.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {}
@@ -74,6 +75,11 @@ impl<T> SpinLock<T> {
     pub fn leak(&self) -> &mut T {
         unsafe { &mut *self.data.get() }
     }
+}
+
+#[no_mangle]
+pub fn alarm() {
+    crate::println!("here");
 }
 
 pub struct SpinLockGuard<'a, T: 'a> {

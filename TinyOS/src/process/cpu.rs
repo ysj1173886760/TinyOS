@@ -10,6 +10,7 @@ const DEFAULT: Cpu = Cpu::new();
 static mut CPUS: [Cpu; NCPU] = [DEFAULT; NCPU];
 
 // lifetime specifier really annoys me, i will use raw pointer first
+#[derive(Debug)]
 pub struct Cpu {
     pub noff: u8,
     pub intena: bool,

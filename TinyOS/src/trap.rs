@@ -50,6 +50,9 @@ pub extern fn usertrap() {
         intr_on();
 
         // syscall();
+        let trapframe = unsafe { &mut *p.trapframe };
+        crate::println!("calling syscall here {}", trapframe.a7);
+        panic!();
     } else {
         crate::println!("usertrap(): unexpected scause {:#x} pid={}", r_scause(), p.pid);
         crate::println!("            sepc={:#x} stval={:#x}", r_sepc(), r_stval());
@@ -62,7 +65,7 @@ pub extern fn usertrap() {
 
     // give up the CPU if this is a timer interrupt
 
-    // usertrapret();
+    usertrapret();
 }
 
 //

@@ -36,7 +36,7 @@ impl<T> SpinLock<T> {
         return self.locked.load(Ordering::Relaxed) && self.cpu_id.get() == cpuid() as isize;
     }
 
-    fn acquire(&self) {
+    pub fn acquire(&self) {
         push_off();
         if self.holding() {
             panic!("acquire");
@@ -50,7 +50,7 @@ impl<T> SpinLock<T> {
         // i didn't reset lock->cpu_id here, because we will only read cpu_id when we acquired the lock
     }
 
-    fn release(&self) {
+    pub fn release(&self) {
         if !self.holding() {
             panic!("release");
         }

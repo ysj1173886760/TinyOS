@@ -73,3 +73,14 @@ pub const TRAMPOLINE: usize = MAXVA - PGSIZE;
 pub const fn KSTACK(p: usize) -> usize {
     TRAMPOLINE - (p + 1) * 2 * PGSIZE
 }
+
+// User memory layout.
+// Address zero first:
+//   text
+//   original data and bss
+//   fixed-size stack
+//   expandable heap
+//   ...
+//   TRAPFRAME (p->trapframe, used by the trampoline)
+//   TRAMPOLINE (the same page as in the kernel)
+pub const TRAPFRAME: usize = TRAMPOLINE - PGSIZE;

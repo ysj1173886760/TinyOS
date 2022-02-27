@@ -1,6 +1,6 @@
 use array_macro::array;
-use crate::{spinlock::SpinLock, mm::{PGSIZE, PGSHIFT}, consts::memlayout::VIRTIO0, process::proc_manager};
-use core::ptr;
+use crate::{spinlock::SpinLock, mm::{PGSIZE, PGSHIFT}, consts::memlayout::VIRTIO0, process::{proc_manager, myproc}, fs::{Buf, BSIZE}};
+use core::{ptr, sync::atomic::{fence, Ordering}};
 
 const NUM: usize = 8;
 
@@ -97,8 +97,6 @@ struct Info {
     // disk intr op retrieves it to wake up the waiting proc
     buf_channel: Option<usize>,
     status: u8,
-    // is the relevant buf owned by disk?
-    disk: bool
 }
 
 // align to 4096
@@ -295,6 +293,130 @@ impl Disk {
         return true;
     }
 
+    pub fn rw(&mut self, buf: &mut Buf, write: bool) {
+        let sector = (buf.blockno as usize * (BSIZE / 512)) as u64;
+
+        self.lock.acquire();
+        // the spec's Section 5.2 says that legacy block operations use
+        // three descriptors: one for type/reserved/sector, one for the
+        // data, one for a 1-byte status result.
+
+        // allocate the three descriptors.
+        let mut idx: [usize; 3] = [0; 3];
+        loop {
+            if self.alloc3_desc(&mut idx) {
+                break;
+            } else {
+                let p = unsafe { &mut *myproc() };
+                p.sleep(&self.free[0] as *const _ as usize, &self.lock);
+            }
+        }
+
+        // format the three descriptors
+        // qemu's virtio-blk.c reads them
+        let buf0 = &mut self.ops[idx[0]];
+        if write {
+            buf0._type = VIRTIO_BLK_T_OUT;  // write the disk
+        } else {
+            buf0._type = VIRTIO_BLK_T_IN;   // read the disk
+        }
+
+        buf0.reserved = 0;
+        buf0.sector = sector;
+
+        self.desc[idx[0]].addr = buf0 as *const _ as u64;
+        self.desc[idx[0]].len = core::mem::size_of::<BlkReq>() as u32;
+        self.desc[idx[0]].flags = VRING_DESC_F_NEXT;
+        self.desc[idx[0]].next = idx[1] as u16;
+
+        self.desc[idx[1]].addr = buf.data.as_ptr() as u64;
+        self.desc[idx[1]].len = BSIZE as u32;
+        
+        if write {
+            self.desc[idx[1]].flags = 0;
+        } else {
+            self.desc[idx[1]].flags = VRING_DESC_F_WRITE as u16;
+        }
+        self.desc[idx[1]].flags |= VRING_DESC_F_NEXT as u16;
+        self.desc[idx[1]].next = idx[2] as u16;
+
+        self.info[idx[0]].status = 0xff;
+        self.desc[idx[2]].addr = &self.info[idx[0]].status as *const _ as u64;
+        self.desc[idx[2]].len = 1;
+        self.desc[idx[2]].flags = VRING_DESC_F_WRITE as u16;
+        self.desc[idx[2]].next = 0;
+
+        // record struct buf for virtio_disk_intr
+        buf.disk = true;
+        self.info[idx[0]].buf_channel = Some(buf as *mut _ as usize);
+
+        // tell the device the first index in our chain of descriptors
+        self.avail.ring[self.avail.idx as usize % NUM] = idx[0] as u16;
+
+        fence(Ordering::SeqCst);
+
+        // tell the device another avail ring entry is available
+        self.avail.idx += 1;
+
+        fence(Ordering::SeqCst);
+
+        write_offset(VIRTIO_MMIO_QUEUE_NOTIFY, 0);
+
+        // wait for virtio_disk_intr to say request has finished
+        // i wonder will compiler will optimize this?
+        // i think the answer is no, because fence will prevent compiler optimizing across it
+        while buf.disk {
+            let p = unsafe { &mut *myproc() };
+            // sleep on this buffer
+            p.sleep(buf as *mut _ as usize, &self.lock);
+        }
+
+        self.info[idx[0]].buf_channel = None;
+        self.free_chan(idx[0]);
+
+        self.lock.release();
+    }
+
+    // called by the interrupt handler
+    pub fn intr(&mut self) {
+        self.lock.acquire();
+
+        // the device won't raise another interrupt until we tell it
+        // we've seen this interrupt, which the following line does.
+        // this may race with the device writing new entries to
+        // the "used" ring, in which case we may process the new
+        // completion entries in this interrupt, and have nothing to do
+        // in the next interrupt, which is harmless.
+        write_offset(VIRTIO_MMIO_INTERRUPT_ACK, read_offset(VIRTIO_MMIO_INTERRUPT_STATUS) & 0x3);
+
+        fence(Ordering::SeqCst);
+
+        // the device increments disk.used->idx when it
+        // adds an entry to the used ring
+
+        while self.used_idx != self.used.idx {
+            fence(Ordering::SeqCst);
+            let id = self.used.ring[self.used_idx as usize % NUM].id;
+
+            if self.info[id as usize].status != 0 {
+                panic!("virtio_disk_intr status")
+            }
+
+            let addr = self.info[id as usize].buf_channel.expect("failed to find buffer addr");
+            let b = unsafe { &mut *(addr as *mut Buf) };
+            b.disk = false; // disk is done with buf
+            
+            // wakeup the waiting process
+            unsafe {
+                proc_manager.wakeup(addr);
+            }
+
+            self.used_idx += 1;
+        }
+
+        self.lock.release();
+    }
+
 }
 
 impl Pad {
@@ -349,7 +471,6 @@ impl Info {
         Self {
             buf_channel: None,
             status: 0,
-            disk: false,
         }
     }
 }

@@ -24,6 +24,7 @@ mod trap;
 mod plic;
 mod sleeplock;
 mod driver;
+mod fs;
 
 // ///////////////////////////////////
 // / LANGUAGE STRUCTURES / FUNCTIONS

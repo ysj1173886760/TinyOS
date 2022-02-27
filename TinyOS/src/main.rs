@@ -23,6 +23,7 @@ mod init_core;
 mod trap;
 mod plic;
 mod sleeplock;
+mod driver;
 
 // ///////////////////////////////////
 // / LANGUAGE STRUCTURES / FUNCTIONS

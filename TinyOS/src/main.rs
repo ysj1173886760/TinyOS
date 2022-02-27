@@ -22,6 +22,7 @@ mod mm;
 mod init_core;
 mod trap;
 mod plic;
+mod sleeplock;
 
 // ///////////////////////////////////
 // / LANGUAGE STRUCTURES / FUNCTIONS

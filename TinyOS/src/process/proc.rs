@@ -1,5 +1,5 @@
 use crate::{mm::{KBox, PageTable, PteFlag, PGSIZE, kalloc, uvm_free, kfree}, spinlock::SpinLock};
-use super::{TrapFrame, Context, fork_ret, proc_manager};
+use super::{TrapFrame, Context, fork_ret, proc_manager, mycpu};
 use crate::consts::memlayout::{TRAMPOLINE, TRAPFRAME};
 
 use core::ptr;
@@ -174,6 +174,35 @@ impl Proc {
         if self.killed {
             self.exit(status);
         }
+    }
+
+    // Atomically release lock and sleep on chan.
+    // Reacquires lock when awakened.
+    pub fn sleep<T>(&mut self, channel: usize, lock: &SpinLock<T>) {
+        // Must acquire p->lock in order to
+        // change p->state and then call sched.
+        // Once we hold p->lock, we can be
+        // guaranteed that we won't miss any wakeup
+        // (wakeup locks p->lock),
+        // so it's okay to release lk.
+
+        self.lock.acquire();
+        lock.release();
+
+        // Go to sleep
+        self.channel = channel;
+        self.state = ProcState::SLEEPING;
+
+        // we are holding the lock when calling mycpu
+        let cpu = unsafe { &mut *mycpu() };
+        cpu.sched();
+
+        // Tidy up
+        self.channel = 0;
+
+        // reacquire the original lock
+        self.lock.release();
+        lock.acquire();
     }
 }
 

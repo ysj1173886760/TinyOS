@@ -37,7 +37,7 @@ const VIRTIO_F_ANY_LAYOUT: u8 = 27;
 const VIRTIO_RING_F_INDIRECT_DESC: u8 = 28;
 const VIRTIO_RING_F_EVENT_IDX: u8 = 29;
 
-pub static DISK: Disk = Disk::new();
+pub static mut DISK: Disk = Disk::new();
 
 // from xv6
 // the virtio driver and device mostly communicate through a set of

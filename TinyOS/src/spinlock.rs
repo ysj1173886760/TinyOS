@@ -18,6 +18,8 @@ pub struct SpinLock<T> {
     cpu_id: Cell<isize>,
 }
 
+// essentially here what it means is only when data protected by lock can safely move ownership though thread,
+// can the lock shared between threads. whoever successfully acquire the lock will have the ownership of data
 unsafe impl<T: Send> Sync for SpinLock<T> {}
 
 impl<T> SpinLock<T> {

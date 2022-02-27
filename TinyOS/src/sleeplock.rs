@@ -1,6 +1,6 @@
 use core::cell::{Cell, UnsafeCell};
 
-use crate::{spinlock::SpinLock, process::myproc};
+use crate::{spinlock::SpinLock, process::{myproc, proc_manager}};
 
 
 // Long-term locks for processes
@@ -53,7 +53,9 @@ impl<T> SleepLock<T> {
         self.locked.set(false);
         self.pid.set(0);
 
-        // TODO: wakeup
+        unsafe {
+            proc_manager.wakeup(self.locked.as_ptr() as usize);
+        }
         
         self.lock.release();
     }

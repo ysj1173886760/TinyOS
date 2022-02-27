@@ -132,6 +132,19 @@ impl ProcManager {
     fn is_init_proc(&self, p: &Proc) -> bool {
         ptr::eq(&self.proc[0], p)
     }
+
+    // Wake up all processes sleeping on chan.
+    // Must be called without any p->lock.
+    // FIXME: should we check whether the process is current process
+    pub fn wakeup(&mut self, channel: usize) {
+        for p in self.proc.iter_mut() {
+            let guard = p.lock.lock();
+            if p.state == ProcState::SLEEPING && p.channel == channel {
+                p.state = ProcState::RUNNABLE;
+            }
+            drop(guard);
+        }
+    }
 }
 
 // A fork child's very first scheduling by scheduler()

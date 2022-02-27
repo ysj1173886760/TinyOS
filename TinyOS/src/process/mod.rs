@@ -1,4 +1,5 @@
 use core::ptr::null_mut;
+use core::ptr;
 
 pub use cpu::{Cpu, cpuid, mycpu};
 pub use context::Context;
@@ -127,6 +128,10 @@ impl ProcManager {
         None
     }
 
+    // check if the process is the init_proc
+    fn is_init_proc(&self, p: &Proc) -> bool {
+        ptr::eq(&self.proc[0], p)
+    }
 }
 
 // A fork child's very first scheduling by scheduler()

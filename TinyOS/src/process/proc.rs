@@ -1,5 +1,5 @@
 use crate::{mm::{KBox, PageTable, PteFlag, PGSIZE, kalloc, uvm_free, kfree}, spinlock::SpinLock};
-use super::{TrapFrame, Context, fork_ret};
+use super::{TrapFrame, Context, fork_ret, proc_manager};
 use crate::consts::memlayout::{TRAMPOLINE, TRAPFRAME};
 
 use core::ptr;
@@ -160,6 +160,20 @@ impl Proc {
         //TODO: set current working directory
 
         self.state = ProcState::RUNNABLE;
+    }
+
+    pub fn exit(&mut self, status: i32) {
+        if unsafe { proc_manager.is_init_proc(&self) } {
+            panic!("init exiting");
+        }
+
+        panic!("todo exit");
+    }
+
+    pub fn check_exit(&mut self, status: i32) {
+        if self.killed {
+            self.exit(status);
+        }
     }
 }
 

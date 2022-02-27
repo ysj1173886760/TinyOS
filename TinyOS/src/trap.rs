@@ -56,9 +56,7 @@ pub extern fn usertrap() {
         ScauseType::Ecall => {
             // system call
 
-            if p.killed {
-                // TODO: exit(-1);
-            }
+            p.check_exit(-1);
 
             // sepc points to the ecall instruction,
             // but we want to return to the next instruction.
@@ -83,9 +81,7 @@ pub extern fn usertrap() {
         ScauseType::IntSSoft => {
             handle_timer();
 
-            if p.killed {
-                // TODO: exit here
-            }
+            p.check_exit(-1);
 
             // then yield the cpu
             unsafe {
@@ -100,9 +96,7 @@ pub extern fn usertrap() {
         }
     }
 
-    if p.killed {
-        // exit(-1);
-    }
+    p.check_exit(-1);
 
     usertrapret();
 }

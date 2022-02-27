@@ -275,3 +275,20 @@ pub fn r_fp() -> usize {
         return x;
     }
 }
+
+// Supervisor Interrupt Pending
+#[inline]
+pub fn w_sip(x: usize) {
+    unsafe {
+        asm!("csrw sip, {}", in(reg) x);
+    }
+}
+
+#[inline]
+pub fn r_sip() -> usize {
+    unsafe {
+        let x;
+        asm!("csrr {}, sip", out(reg) x);
+        return x;
+    }
+}

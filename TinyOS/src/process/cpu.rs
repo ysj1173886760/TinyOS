@@ -96,11 +96,24 @@ impl Cpu {
 
     // Give up the CPU for one scheduling round.
     pub fn yield_cpu(&mut self) {
-        let p = unsafe { &mut *myproc() };
+        let p = unsafe { &mut *self.proc };
         p.lock.acquire();
         p.state = ProcState::RUNNABLE;
         self.sched();
         p.lock.release();
+    }
+
+    pub fn yield_proc(&mut self) {
+        if !self.proc.is_null() {
+            let p = unsafe { &mut *self.proc };
+            p.lock.acquire();
+            if p.state == ProcState::RUNNING {
+                p.state = ProcState::RUNNABLE;
+                self.sched();
+            }
+            p.lock.release();
+        }
+
     }
 }
 
@@ -114,6 +127,9 @@ pub fn cpuid() -> usize {
 // Return this CPU's cpu struct.
 // Interrupts must be disabled.
 pub fn mycpu() -> *mut Cpu {
+    if intr_get() {
+        panic!("calling mycpu with interrupt enabled");
+    }
     unsafe {
         let id = cpuid();
         return &mut CPUS[id];

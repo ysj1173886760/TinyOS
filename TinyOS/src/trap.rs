@@ -1,4 +1,4 @@
-use crate::{consts::{riscv, memlayout::{TRAMPOLINE, TRAPFRAME}}, riscv::{w_stvec, SSTATUS_SPP, r_sstatus, r_sepc, r_scause, intr_on, r_stval, intr_off, r_satp, r_tp, SSTATUS_SPIE, w_sstatus, w_sepc, intr_get}, process::myproc, mm::PGSIZE};
+use crate::{consts::{memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ}}, riscv::{w_stvec, SSTATUS_SPP, r_sstatus, r_sepc, r_scause, intr_on, r_stval, intr_off, r_satp, r_tp, SSTATUS_SPIE, w_sstatus, w_sepc, intr_get, w_sip, r_sip}, process::{myproc, cpuid, mycpu}, mm::PGSIZE, plic::{plic_claim, plic_complete}};
 
 extern "C" {
     fn kernelvec();
@@ -10,6 +10,26 @@ extern "C" {
 pub fn trap_init_hart() {
 
     w_stvec(kernelvec as usize);
+}
+
+enum ScauseType {
+    Unknown,
+    IntSSoft,
+    IntSExt,
+    Ecall,
+}
+
+const INTERRUPT: usize = 0x8000000000000000;
+const INTERRUPT_S_SOFT: usize = INTERRUPT + 1;
+const INTERRUPT_S_EXT: usize = INTERRUPT + 9;
+
+fn get_scause() -> ScauseType {
+    match r_scause() {
+        8 => ScauseType::Ecall,
+        INTERRUPT_S_SOFT => ScauseType::IntSSoft,
+        INTERRUPT_S_EXT => ScauseType::IntSExt,
+        _ => ScauseType::Unknown
+    }
 }
 
 //
@@ -32,38 +52,57 @@ pub extern fn usertrap() {
         (&mut (*p.trapframe)).epc = r_sepc();
     }
 
-    if r_scause() == 8 {
-        // system call
+    match get_scause() {
+        ScauseType::Ecall => {
+            // system call
 
-        if p.killed {
-            // TODO: exit(-1);
+            if p.killed {
+                // TODO: exit(-1);
+            }
+
+            // sepc points to the ecall instruction,
+            // but we want to return to the next instruction.
+            unsafe {
+                (&mut (*p.trapframe)).epc += 4;
+            }
+
+            // an interrupt will change sstatus &c registers,
+            // so don't enable until done with those registers.
+            intr_on();
+
+            // syscall();
+            let trapframe = unsafe { &mut *p.trapframe };
+            crate::println!("calling syscall here {}", trapframe.a7);
+            panic!();
         }
 
-        // sepc points to the ecall instruction,
-        // but we want to return to the next instruction.
-        unsafe {
-            (&mut (*p.trapframe)).epc += 4;
+        ScauseType::IntSExt => {
+            handle_plic();
         }
 
-        // an interrupt will change sstatus &c registers,
-        // so don't enable until done with those registers.
-        intr_on();
+        ScauseType::IntSSoft => {
+            handle_timer();
 
-        // syscall();
-        let trapframe = unsafe { &mut *p.trapframe };
-        crate::println!("calling syscall here {}", trapframe.a7);
-        panic!();
-    } else {
-        crate::println!("usertrap(): unexpected scause {:#x} pid={}", r_scause(), p.pid);
-        crate::println!("            sepc={:#x} stval={:#x}", r_sepc(), r_stval());
-        p.killed = true;
+            if p.killed {
+                // TODO: exit here
+            }
+
+            // then yield the cpu
+            unsafe {
+                (&mut *mycpu()).yield_proc();
+            }
+        }
+
+        ScauseType::Unknown => {
+            crate::println!("usertrap(): unexpected scause {:#x} pid={}", r_scause(), p.pid);
+            crate::println!("            sepc={:#x} stval={:#x}", r_sepc(), r_stval());
+            p.killed = true;
+        }
     }
 
     if p.killed {
         // exit(-1);
     }
-
-    // give up the CPU if this is a timer interrupt
 
     usertrapret();
 }
@@ -130,12 +169,62 @@ pub extern fn kerneltrap() {
     }
 
     // handle device interrupt here
+    match get_scause() {
+        ScauseType::Ecall => {
+            panic!("ecall from supervisor mode");
+        }
+
+        ScauseType::IntSExt => {
+            handle_plic();
+        }
+
+        ScauseType::IntSSoft => {
+            handle_timer();
+            // in kernel mode, we may not have running proc, so we need to check here
+            
+            // yield proc will help us checking whether we should yield
+            unsafe {
+                (&mut *mycpu()).yield_proc();
+            }
+        }
+
+        ScauseType::Unknown => {
+            crate::println!("kerneltrap(): unexpected scause {:#x}", r_scause());
+            crate::println!("              sepc={:#x} stval={:#x}", r_sepc(), r_stval());
+            panic!("kerneltrap(): unknown trap type");
+        }
+    }
 
     w_sepc(sepc);
     w_sstatus(sstatus);
 }
 
-pub fn devintr() -> usize {
-    let scause = r_scause();
-    return 0;
+fn handle_timer() {
+    // software interrupt from a machine-mode timer interrupt,
+    // forwarded by timervec in kernelvec.S.
+
+    if cpuid() == 0 {
+        // TODO: tick here
+    }
+
+    // acknowledge the software interrupt by clearing
+    // the SSIP bit in sip.
+    w_sip(r_sip() & !2);
+}
+
+fn handle_plic() {
+    // this is a supervisor external interrupt, via PLIC.
+
+    let irq = plic_claim();
+    if irq as usize == UART0_IRQ {
+        // TODO: handle uart intr
+    } else if irq as usize == VIRTIO0_IRQ {
+        // TODO: handle virtio intr
+    } else if irq != 0 {
+        crate::println!("unexpected interrupt irq {}", irq);
+    }
+
+    if irq != 0 {
+        plic_complete(irq);
+    }
 }

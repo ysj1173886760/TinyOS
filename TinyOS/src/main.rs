@@ -21,6 +21,7 @@ mod printf;
 mod mm;
 mod init_core;
 mod trap;
+mod plic;
 
 // ///////////////////////////////////
 // / LANGUAGE STRUCTURES / FUNCTIONS

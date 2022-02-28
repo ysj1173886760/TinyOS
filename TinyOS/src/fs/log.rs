@@ -1,6 +1,6 @@
-use crate::{consts::param::LOGSIZE, spinlock::SpinLock};
+use crate::{consts::param::{LOGSIZE, MAXOPBLOCKS}, spinlock::SpinLock, process::{myproc, proc_manager, Proc}};
 
-use super::{superblock::SuperBlock, BSIZE, bio::BCACHE};
+use super::{superblock::SuperBlock, BSIZE, bio::BCACHE, Buf};
 
 // Simple logging that allows concurrent FS system calls.
 //
@@ -42,7 +42,7 @@ pub struct Log {
     pub start: u32,
     pub size: u32,
     pub outstanding: u32,
-    pub committing: u32,
+    pub committing: bool,
     pub dev: u32,
     pub lh: LogHeader,
 }
@@ -63,7 +63,7 @@ impl Log {
             start: 0,
             size: 0,
             outstanding: 0,
-            committing: 0,
+            committing: false,
             dev: 0,
             lh: LogHeader::new(),
         }
@@ -81,8 +81,7 @@ impl Log {
 
     // Copy committed blocks from log to their home location
     pub fn install_trans(&self, recovering: bool) {
-        let mut tail = 0;
-        while tail < self.lh.n {
+        for tail in 0..self.lh.n {
             unsafe {
                 // read log block
                 let lbuf = BCACHE.bread(self.dev, self.start + tail + 1);
@@ -99,6 +98,7 @@ impl Log {
                 // write dst to disk
                 dbuf.bwrite();
 
+                // log_write increases it's refcnt
                 if !recovering {
                     BCACHE.bunpin(dbuf);
                 }
@@ -107,5 +107,179 @@ impl Log {
                 BCACHE.brelse(dbuf);
             }
         }
+    }
+
+    // Read the log header from disk into the in-memory log header
+    pub fn read_head(&mut self) {
+        let b = unsafe { BCACHE.bread(self.dev, self.start) };
+        let lh = unsafe { &mut *(b.data.as_ptr() as *mut LogHeader) };
+        self.lh.n = lh.n;
+        for i in 0..self.lh.n as usize {
+            self.lh.block[i] = lh.block[i];
+        }
+        unsafe { BCACHE.brelse(b) };
+    }
+
+    // Write in-memory log header to disk.
+    // This is the true point at which the
+    // current transaction commits.
+    pub fn write_head(&self) {
+        let b = unsafe { BCACHE.bread(self.dev, self.start) };
+        let lh = unsafe { &mut *(b.data.as_ptr() as *mut LogHeader) };
+        lh.n = self.lh.n;
+        for i in 0..self.lh.n as usize {
+            lh.block[i] = self.lh.block[i];
+        }
+        unsafe {
+            b.bwrite();
+            BCACHE.brelse(b);
+        }
+    }
+
+    pub fn recover_from_log(&mut self) {
+        self.read_head();
+
+        // if committed, copy from log to disk
+        self.install_trans(true);
+
+        // clear the log
+        self.lh.n = 0;
+        self.write_head();
+    }
+
+    // copy modified blocks from cache to log
+    pub fn write_log(&mut self) {
+        for tail in 0..self.lh.n {
+            unsafe {
+                // log block
+                let to= BCACHE.bread(self.dev, self.start + tail + 1);
+                // cache block
+                let from = BCACHE.bread(self.dev, self.lh.block[tail as usize]);
+                core::ptr::copy(
+                    from.data.as_ptr(),
+                    to.data.as_mut_ptr(),
+                    from.data.len()
+                );
+                to.bwrite();
+                BCACHE.brelse(from);
+                BCACHE.brelse(to);
+            }
+        }
+    }
+
+    pub fn commit(&mut self) {
+        if self.lh.n > 0 {
+            // write modified blocks from cache to log
+            self.write_log();
+
+            // write header to disk -- the real commit
+            self.write_head();
+
+            // now install writes to home locations
+            self.install_trans(false);
+
+            // erase the transaction from the log
+            self.lh.n = 0;
+            self.write_head();
+        }
+    }
+}
+
+// called at the start of each FS system call.
+pub fn begin_op() {
+    // totally unsafe
+    // whatever, chaos is principle
+    unsafe {
+        LOG.lock.acquire();
+        let p = &mut *myproc();
+        loop {
+            if LOG.committing {
+                p.sleep(&LOG as *const _ as usize, &LOG.lock);
+            } else if LOG.lh.n + (LOG.outstanding + 1) * MAXOPBLOCKS as u32 > LOGSIZE as u32 {
+                // this op might exhaust log space; wait for commit
+                p.sleep(&LOG as *const _ as usize, &LOG.lock);
+            } else {
+                LOG.outstanding += 1;
+                LOG.lock.release();
+                break;
+            }
+        }
+    }
+}
+
+// called at the end of each FS system call.
+// commits if this was the last outstanding operation
+pub fn end_op() {
+    let mut do_commit = false;
+    unsafe {
+        LOG.lock.acquire();
+        LOG.outstanding -= 1;
+
+        if LOG.committing {
+            panic!("log.committing");
+        }
+
+        if LOG.outstanding == 0 {
+            do_commit = true;
+            LOG.committing = true;
+        } else {
+            // begin_op() may be waiting for log space,
+            // and decrementing log.outstanding has decreased
+            // the amount of reserved space.
+            proc_manager.wakeup(&LOG as *const _ as usize);
+        }
+        LOG.lock.release();
+
+        if do_commit {
+            // call commit w/o holding locks, since not allowed
+            // to sleep with locks.
+            LOG.commit();
+            LOG.lock.acquire();
+            LOG.committing = false;
+            proc_manager.wakeup(&LOG as *const _ as usize);
+            LOG.lock.release();
+        }
+    }
+}
+
+// Caller has modified b->data and is done with the buffer.
+// Record the block number and pin in the cache by increasing refcnt.
+// commit()/write_log() will do the disk write.
+//
+// log_write() replaces bwrite(); a typical use is:
+//   bp = bread(...)
+//   modify bp->data[]
+//   log_write(bp)
+//   brelse(bp)
+pub fn log_write(b: &mut Buf) {
+    unsafe {
+        LOG.lock.acquire();
+        if LOG.lh.n >= LOGSIZE as u32 || LOG.lh.n >= LOG.size - 1 {
+            panic!("too big a transaction");
+        }
+        if LOG.outstanding < 1 {
+            panic!("log_write outside of trans");
+        }
+
+        let mut i = 0;
+
+        // log absorption
+        while i < LOG.lh.n as usize {
+            if LOG.lh.block[i] == b.blockno {
+                break;
+            }
+            i += 1;
+        }
+        LOG.lh.block[i] = b.blockno;
+
+        // add new block to log?
+        if i == LOG.lh.n as usize {
+            // pin the buffer to prevent it from writing to disk
+            // unpin will be called in install_transaction
+            BCACHE.bpin(b);
+            LOG.lh.n += 1;
+        }
+
+        LOG.lock.release();
     }
 }

@@ -1,8 +1,7 @@
 use crate::{sleeplock::SleepLock, spinlock::SpinLock, consts::param::NBUF, driver::DISK};
 use array_macro::array;
 use core::ptr;
-
-pub const BSIZE: usize = 1024;
+use super::BSIZE;
 
 // Buffer cache.
 //
@@ -19,7 +18,7 @@ pub const BSIZE: usize = 1024;
 // * Only one process at a time can use a buffer,
 //     so do not keep them longer than necessary.
 
-pub static BCACHE: BCache = BCache::new();
+pub static mut BCACHE: BCache = BCache::new();
 
 pub struct Buf {
     pub valid: bool,    // has data been read from disk

@@ -85,6 +85,7 @@ impl BCache {
                 b.lock.acquire();
                 return b;
             }
+            cur = b.next;
         }
         
         // Not cached
@@ -101,6 +102,7 @@ impl BCache {
                 b.lock.acquire();
                 return b;
             }
+            cur = b.next;
         }
 
         panic!("bget: no buffers");

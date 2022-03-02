@@ -1,5 +1,5 @@
 use crate::consts::{riscv::{MAXVA, SATP_SV39, SV39FLAGLEN}};
-use super::{PGSHIFT, pg_round_down, KBox, PGSIZE, kfree, kalloc};
+use super::{PGSHIFT, pg_round_down, KBox, PGSIZE, kfree, kalloc, pg_round_up};
 use core::ptr;
 
 #[repr(usize)]
@@ -68,6 +68,11 @@ impl PageTableEntry {
     #[inline]
     pub fn write_perm(&mut self, pa: usize, perm: usize) {
         self.data = ((pa >> PGSHIFT) << SV39FLAGLEN) | (perm | PteFlag::V as usize);
+    }
+
+    #[inline]
+    pub fn clear_user(&mut self) {
+        self.data &= !(PteFlag::U as usize);
     }
 
 }
@@ -292,10 +297,12 @@ impl PageTable {
                     // memset to zero
                     ptr::write_bytes(ptr as *mut u8, 0, PGSIZE);
                 }
-                self.map_pages(0, PGSIZE, ptr, PteFlag::R as usize |
-                                                                PteFlag::W as usize |
-                                                                PteFlag::X as usize |
-                                                                PteFlag::U as usize);
+                let flag = PteFlag::R as usize |
+                    PteFlag::W as usize |
+                    PteFlag::X as usize |
+                    PteFlag::U as usize;
+                self.map_pages(0, PGSIZE, ptr, flag)
+                    .expect("failed to map page for init proc");
                 unsafe {
                     // copy the code
                     ptr::copy_nonoverlapping(code.as_ptr(), ptr as *mut u8, code.len());
@@ -306,4 +313,128 @@ impl PageTable {
             }
         }
     }
+
+    // Allocate PTEs and physical memory to grow process from oldsz to
+    // newsz, which need not be page aligned.  Returns new size or 0 on error.
+    pub fn uvm_alloc(&mut self, mut oldsz: usize, newsz: usize) -> usize {
+        if newsz < oldsz {
+            return oldsz;
+        }
+
+        oldsz = pg_round_up(oldsz);
+        for a in (oldsz..newsz).step_by(PGSIZE) {
+            match kalloc() {
+                Some(mem) => {
+                    unsafe {
+                        core::ptr::write_bytes(
+                            mem as *mut u8,
+                            0,
+                            PGSIZE,
+                        );
+                    }
+                    let flag = PteFlag::W as usize |
+                        PteFlag::X as usize |
+                        PteFlag::R as usize |
+                        PteFlag::U as usize;
+                    if self.map_pages(a, PGSIZE, mem, flag).is_err() {
+                        kfree(mem);
+                        self.uvm_dealloc(a, oldsz);
+                        return 0;
+                    }
+                }
+                None => {
+                    // free from a to oldsz,
+                    // which is newly allocated
+                    self.uvm_dealloc(a, oldsz);
+                    return 0;
+                }
+            }
+        }
+        return newsz;
+    }
+
+    // Deallocate user pages to bring the process size from oldsz to
+    // newsz.  oldsz and newsz need not be page-aligned, nor does newsz
+    // need to be less than oldsz.  oldsz can be larger than the actual
+    // process size.  Returns the new process size.
+    pub fn uvm_dealloc(&mut self, oldsz: usize, newsz: usize) -> usize {
+        if newsz >= oldsz {
+            return oldsz;
+        }
+
+        if pg_round_up(newsz) < pg_round_up(oldsz) {
+            let npages = (pg_round_up(oldsz) - pg_round_up(newsz)) / PGSIZE;
+            self.uvm_unmap(pg_round_up(newsz), npages, true);
+        }
+
+        return newsz;
+    }
+
+    // Given a parent process's page table, copy
+    // its memory into a child's page table.
+    // Copies both the page table and the
+    // physical memory.
+    // returns 0 on success, -1 on failure.
+    // frees any allocated pages on failure.
+    // from 0 to sz
+    // TODO: use more rust-ful error handling technique to refactor this part
+    pub fn uvm_copy(&mut self, old: &mut PageTable, sz: usize) -> Result<(), &'static str> {
+        for i in (0..sz).step_by(PGSIZE) {
+            match old.walk(i, false) {
+                Some(pte) => {
+                    if !pte.is_valid() {
+                        panic!("uvmcopy: page not present");
+                    }
+                    let pa = pte.as_pa();
+                    let flags = pte.flags();
+                    
+                    match kalloc() {
+                        Some(mem) => {
+                            if self.map_pages(i, PGSIZE, mem, flags).is_err() {
+                                kfree(mem);
+                                self.uvm_unmap(0, i / PGSIZE, true);
+                                return Err("failed to map new pages");
+                            }
+                        },
+                        None => {
+                            self.uvm_unmap(0, i / PGSIZE, true);
+                            return Err("failed to alloc new page");
+                        }
+                    }
+                }
+                None => {
+                    panic!("uvmcopy: pte should exist");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // mark a PTE invalid for user access
+    // used by exec for the user stack guard page.
+    pub fn uvm_clear(&mut self, va: usize) {
+        match self.walk(va, false) {
+            Some(pte) => {
+                pte.clear_user();
+            }
+            None => {
+                panic!("uvmclear");
+            }
+        }
+    }
+
+    // Copy from kernel to user.
+    // Copy len bytes from src to virtual address dstva in a given page table.
+    // Return 0 on success, -1 on error.
+    pub fn copyout(&mut self, dstva: usize, src: *const u8, count: usize) -> Result<(), &'static str> {
+        Ok(())
+    }
+
+    // Copy from user to kernel.
+    // Copy len bytes to dst from virtual address srcva in a given page table.
+    // Return 0 on success, -1 on error.
+    pub fn copyin(&mut self, dst: *mut u8, srcva: usize, count: usize) -> Result<(), &'static str> {
+        Ok(())
+    }
+
 }

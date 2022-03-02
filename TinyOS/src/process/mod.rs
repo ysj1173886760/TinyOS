@@ -179,3 +179,49 @@ pub fn myproc() -> *mut Proc {
         return proc;
     }
 }
+
+// Copy to either a user address, or kernel address,
+// depending on usr_dst.
+// Returns 0 on success, -1 on error.
+pub fn either_copyout(user_dst: bool, dst: usize, src: *const u8, len: usize)
+    -> Result<(), &'static str> {
+    let p = unsafe { &mut *myproc() };
+    if user_dst {
+        return p.pagetable
+            .as_mut()
+            .expect("failed to find pagetable")
+            .copyout(dst, src, len);
+    } else {
+        unsafe {
+            core::ptr::copy(
+                src,
+                dst as *mut u8,
+                len
+            );
+        }
+        return Ok(());
+    }
+}
+
+// Copy from either a user address, or kernel address,
+// depending on usr_src.
+// Returns 0 on success, -1 on error.
+pub fn either_copyin(dst: *mut u8, user_src: bool, src: usize, len: usize)
+    -> Result<(), &'static str> {
+    let p = unsafe { &mut *myproc() };
+    if user_src {
+        return p.pagetable
+            .as_mut()
+            .expect("failed to find pagetable")
+            .copyin(dst, src, len);
+    } else {
+        unsafe {
+            core::ptr::copy(
+                src as *const u8,
+                dst,
+                len
+            );
+        }
+        return Ok(());
+    }
+}

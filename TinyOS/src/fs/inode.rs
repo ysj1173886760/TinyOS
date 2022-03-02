@@ -1,8 +1,10 @@
+use core::ops::Add;
+
 use array_macro::array;
 
-use crate::{sleeplock::SleepLock, spinlock::SpinLock, consts::param::NINODE, fs::log::{log_write, LOG}};
+use crate::{sleeplock::SleepLock, spinlock::SpinLock, consts::param::NINODE, fs::log::{log_write, LOG}, process::{either_copyout, either_copyin}};
 
-use super::{NDIRECT, BSIZE, superblock::{SuperBlock, SB}, bio::BCACHE, bitmap::{bfree, balloc}, NINDIRECT};
+use super::{NDIRECT, BSIZE, superblock::{SuperBlock, SB}, bio::BCACHE, bitmap::{bfree, balloc}, NINDIRECT, file::{DIRSIZ, DirEntry}};
 
 /// On disk inode structure
 #[repr(C)]
@@ -441,8 +443,7 @@ impl Inode {
 
     // Return the disk block address of the nth block in inode ip.
     // If there is no such block, bmap allocates one.
-    pub fn bmap(&mut self, bn: u32) -> u32 {
-        let mut bn = bn as usize;
+    pub fn bmap(&mut self, mut bn: usize) -> u32 {
         if bn < NDIRECT {
             if self.addrs[bn] == 0 {
                 self.addrs[bn] = balloc(self.dev);
@@ -458,6 +459,151 @@ impl Inode {
         panic!("bmap: out of range");
     }
 
+    // Read data from inode.
+    // Caller must hold ip->lock.
+    // If user_dst==1, then dst is a user virtual address;
+    // otherwise, dst is a kernel address.
+    pub fn readi(&mut self, user_dst: bool, mut dst: usize, mut off: usize, mut n: usize)
+        -> Result<usize, &'static str> {
+        // overflow
+        if off > self.size as usize || off + n < off {
+            return Err("overflow");
+        }
+        if off + n > self.size as usize {
+            n = self.size as usize - off;
+        }
+        
+        let mut tot = 0;
+        while tot < n {
+            let b = unsafe { BCACHE.bread(self.dev, self.bmap(off / BSIZE)) };
+            let m = core::cmp::min(n - tot, BSIZE - off % BSIZE);
+            if either_copyout(user_dst, dst, unsafe { b.data.as_ptr().add(off % BSIZE) }, m).is_err() {
+                unsafe { BCACHE.brelse(b) };
+                return Err("readi: error in either copyout");
+            }
+            unsafe { BCACHE.brelse(b) };
+            tot += m;
+            off += m;
+            dst += m;
+        }
+
+        Ok(tot)
+    }
+
+    // Write data to inode.
+    // Caller must hold ip->lock.
+    // If user_src==1, then src is a user virtual address;
+    // otherwise, src is a kernel address.
+    // Returns the number of bytes successfully written.
+    // If the return value is less than the requested n,
+    // there was an error of some kind.
+    pub fn writei(&mut self, user_src: bool, mut src: usize, mut off: usize, mut n: usize)
+        -> Result<usize, &'static str> {
+        // overflow
+        if off > self.size as usize || off + n < off {
+            return Err("overflow");
+        }
+        if off + n > self.size as usize {
+            n = self.size as usize - off;
+        }
+
+        let mut tot = 0;
+        while tot < n {
+            let b = unsafe { BCACHE.bread(self.dev, self.bmap(off / BSIZE)) };
+            let m = core::cmp::min(n - tot, BSIZE - off % BSIZE);
+            if either_copyin(unsafe { b.data.as_mut_ptr().add(off % BSIZE) }, user_src, src, m).is_err() {
+                unsafe { BCACHE.brelse(b) };
+                return Err("readi: error in either copyin");
+            }
+            log_write(b);
+            unsafe { BCACHE.brelse(b) };
+            tot += m;
+            off += m;
+            src += m;
+        }
+        
+        // this cast is really strange here
+        if off > self.size as usize {
+            self.size = off as u32;
+        }
+
+        // write the i-node back to disk even if the size didn't change
+        // because the loop above might have called bmap() and added a new
+        // block to ip->addrs[].
+        self.iupdate();
+
+        Ok(tot)
+    }
+
+    // Look for a directory entry in a directory
+    // If found, set *poff to byte offset of entry
+    pub fn dirloopup(&mut self, name: [u8; DIRSIZ], poff: Option<&mut usize>) -> Option<&mut Inode> {
+        if self._type != FileType::Directory {
+            panic!("dirloopup not DIR");
+        }
+
+        let mut dir_entry = DirEntry::new();
+        let dir_size = core::mem::size_of::<DirEntry>();
+        for off in (0..self.size).step_by(dir_size) {
+            if self.readi(false, &dir_entry as *const _ as usize, off as usize, dir_size)
+                .expect("dirloopup read") != dir_size {
+                panic!("dirloopup read");
+            }
+            if dir_entry.inum == 0 {
+                continue;
+            }
+            if name == dir_entry.name {
+                if poff.is_some() {
+                    let p = poff.unwrap();
+                    *p = off as usize;
+                }
+                return unsafe { Some(ITABLE.iget(self.dev, dir_entry.inum.into())) };
+            }
+        }
+        None
+    }
+
+    // Write a new directory entry (name, inum) into the directory dp.
+    pub fn dirlink(&mut self, name: [u8; DIRSIZ], inum: u16) -> bool {
+        // Check that name is not present
+        match self.dirloopup(name, None) {
+            Some(ip) => {
+                unsafe { ITABLE.iput(ip); }
+                return false;
+            },
+            _ => {}
+        }
+
+        let mut dir_entry = DirEntry::new();
+        let dir_size = core::mem::size_of::<DirEntry>();
+        let mut d_off = None;
+
+        // Look for an empty dirent
+        for off in (0..self.size).step_by(dir_size) {
+            if self.readi(false, &dir_entry as *const _ as usize, off as usize, dir_size)
+                .expect("dirlink read") != dir_size {
+                panic!("dirlink read");
+            }
+            if dir_entry.inum == 0 {
+                d_off = Some(off);
+                break;
+            }
+        }
+
+        // do we guarantee there will be a slot?
+        if d_off.is_none() {
+            return false;
+        }
+
+        dir_entry.inum = inum;
+        dir_entry.name = name;
+        if self.writei(false, &dir_entry as *const _ as usize, d_off.unwrap() as usize, dir_size)
+            .expect("dirlink") != dir_size {
+            panic!("dirlink");
+        }
+
+        true
+    }
 }
 
 // Allocate an inode on device dev.

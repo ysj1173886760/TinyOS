@@ -426,15 +426,93 @@ impl PageTable {
     // Copy from kernel to user.
     // Copy len bytes from src to virtual address dstva in a given page table.
     // Return 0 on success, -1 on error.
-    pub fn copyout(&mut self, dstva: usize, src: *const u8, count: usize) -> Result<(), &'static str> {
+    pub fn copyout(&mut self, mut dstva: usize, mut src: *const u8, mut len: usize) -> Result<(), &'static str> {
+        while len > 0 {
+            let va0 = pg_round_down(dstva);
+            let pa0 = self.walkaddr(va0)?;
+            let n = core::cmp::min(PGSIZE - (dstva - va0), len);
+            // i'm not sure whether this will overlap
+            unsafe {
+                core::ptr::copy(
+                    src,
+                    (pa0 + dstva - va0) as *mut u8,
+                    n
+                );
+            }
+
+            len -= n;
+            unsafe {
+                src = src.add(n);
+            }
+            dstva = va0 + PGSIZE;
+        }
         Ok(())
     }
 
     // Copy from user to kernel.
     // Copy len bytes to dst from virtual address srcva in a given page table.
     // Return 0 on success, -1 on error.
-    pub fn copyin(&mut self, dst: *mut u8, srcva: usize, count: usize) -> Result<(), &'static str> {
+    pub fn copyin(&mut self, mut dst: *mut u8, mut srcva: usize, mut len: usize) -> Result<(), &'static str> {
+        while len > 0 {
+            let va0 = pg_round_down(srcva);
+            let pa0 = self.walkaddr(va0)?;
+            let n = core::cmp::min(PGSIZE - (srcva - va0), len);
+            unsafe {
+                core::ptr::copy(
+                    (pa0 + srcva - va0) as *const u8,
+                    dst,
+                    n
+                );
+            }
+
+            len -= n;
+            unsafe {
+                dst = dst.add(n);
+            }
+            srcva = va0 + PGSIZE;
+        }
+
         Ok(())
+    }
+
+    // Copy a null-terminated string from user to kernel.
+    // Copy bytes to dst from virtual address srcva in a given page table,
+    // until a '\0', or max.
+    // Return 0 on success, -1 on error.
+    pub fn copyinstr(&mut self, mut dst: *mut u8, mut srcva: usize, mut max: usize) -> Result<(), &'static str> {
+        let mut got_null = false;
+
+        while !got_null && max > 0 {
+            let va0 = pg_round_down(srcva);
+            let pa0 = self.walkaddr(va0)?;
+            let mut n = core::cmp::min(PGSIZE - (srcva - va0), max);
+
+            let mut p = (pa0 + srcva - va0) as *const u8;
+            unsafe {
+                while n > 0 {
+                    if ptr::read(p) == 0 {
+                        ptr::write(dst, 0);
+                        got_null = true;
+                        break;
+                    } else {
+                        ptr::write(dst, ptr::read(p));
+                    }
+
+                    n -= 1;
+                    max -= 1;
+                    p = p.add(1);
+                    dst = dst.add(1);
+                }
+            }
+
+            srcva = va0 + PGSIZE;
+        }
+
+        if got_null {
+            Ok(())
+        } else {
+            Err("failed to find null")
+        }
     }
 
 }

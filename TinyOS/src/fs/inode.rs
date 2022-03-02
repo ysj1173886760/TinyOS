@@ -1,15 +1,13 @@
-use core::borrow::Borrow;
-
 use array_macro::array;
 
 use crate::{sleeplock::SleepLock, spinlock::SpinLock, consts::param::NINODE, fs::log::{log_write, LOG}};
 
-use super::{NDIRECT, BSIZE, superblock::{SuperBlock, SB}, bio::BCACHE};
+use super::{NDIRECT, BSIZE, superblock::{SuperBlock, SB}, bio::BCACHE, bitmap::{bfree, balloc}, NINDIRECT};
 
 /// On disk inode structure
 #[repr(C)]
 pub struct DInode {
-    _type: u16,     // File type
+    _type: FileType,// File type
     major: u16,     // Major device number (T_DEVICE only)
     minor: u16,     // Minor device number (T_DEVICE only)
     nlink: u16,     // Number of links to inode in file system
@@ -19,7 +17,7 @@ pub struct DInode {
 
 impl DInode {
     fn zero(&mut self) {
-        self._type = 0;
+        self._type = FileType::Empty;
         self.major = 0;
         self.minor = 0;
         self.nlink = 0;
@@ -117,6 +115,15 @@ pub fn BBLOCK(b: u32, sb: &SuperBlock) -> u32 {
 // dev, and inum.  One must hold ip->lock in order to
 // read or write that inode's ip->valid, ip->size, ip->type, &c.
 
+#[repr(u16)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum FileType {
+    Empty = 0,
+    Directory = 1,
+    File = 2,
+    Device = 3,
+}
+
 // in-memory copy of an inode
 pub struct Inode {
     // protected by itable
@@ -127,12 +134,42 @@ pub struct Inode {
     valid: bool,    // inode has been read from disk
 
     // copy of disk inode
-    _type: u16,     // File type
+    _type: FileType,// File type
     major: u16,     // Major device number (T_DEVICE only)
     minor: u16,     // Minor device number (T_DEVICE only)
     nlink: u16,     // Number of links to inode in file system
     size: u32,      // Size of file (bytes)
     addrs: [u32; NDIRECT + 1],  // data block address
+}
+
+pub struct Stat {
+    dev: u32,   // File System's disk device
+    ino: u32,   // Inode number
+    _type: FileType, // Type of file
+    nlink: u16, // Number of links to file
+    size: u32,  // Size of file in bytes
+}
+
+impl Stat {
+    pub fn new() -> Self {
+        Self {
+            dev: 0,
+            ino: 0,
+            _type: FileType::Empty,
+            nlink: 0,
+            size: 0,
+        }
+    }
+
+    pub fn from_inode(ip: &Inode) -> Self {
+        Self {
+            dev: ip.dev,
+            ino: ip.inum,
+            _type: ip._type,
+            nlink: ip.nlink,
+            size: ip.size,
+        }
+    }
 }
 
 pub struct ITable {
@@ -215,10 +252,44 @@ impl ITable {
             ip.nlink == 0 {
             // inode has no links and no other references: truncate and free.
 
+            // we are the only one who has this icache
+            // normally, we should hold the ip->lock while
+            // reading valid and nlink
+            // but now we know there can't have others accessing 
+            // the same data as the same time
+
             // ip->ref == 1 means no other process can have ip locked,
             // so this acquiresleep() won't block (or deadlock).
-            // TODO: itrunc here
+            // ip.lock must hold before we release the itable lock
+            // because someone may come in and increase the refcnt
+            // then we may free a node used by others
+
+            // but we can't use itable->lock to manage this critical section
+            // even if semantically it could.
+            // because we will do disk operations while freeing inode
+            // which may cause context switch.
+            // we can't hold the spinlock during some operation that could wait
+            // thus we have to use ip->lock to protect critical section
+
+            ip.lock.acquire();
+
+            self.lock.release();
+
+            ip.itrunc();
+            // type = 0 in disk indicate this inode is free
+            ip._type = FileType::Empty;
+            ip.iupdate();
+
+            ip.valid = false;
+
+            ip.lock.release();
+
+            self.lock.acquire();
+            // is that means we may get an inode which has been freed
         }
+
+        ip.refcnt -= 1;
+        self.lock.release();
     }
 
     // Common idiom: unlock then put
@@ -237,7 +308,7 @@ impl Inode {
             refcnt: 0,
             lock: SleepLock::new((), "inode"),
             valid: false,
-            _type: 0,
+            _type: FileType::Empty,
             major: 0,
             minor: 0,
             nlink: 0,
@@ -275,7 +346,7 @@ impl Inode {
                 BCACHE.brelse(b);
                 self.valid = true;
 
-                if self._type == 0 {
+                if self._type == FileType::Empty {
                     panic!("ilock: no type");
                 }
             }
@@ -296,6 +367,10 @@ impl Inode {
     // that lives on disk
     // Caller must hold ip->lock
     pub fn iupdate(&mut self) {
+        if !self.lock.holding() {
+            panic!("itrunc");
+        }
+
         unsafe {
             let b = BCACHE.bread(self.dev, IBLOCK(self.inum, &SB));
             // convert disk contect to dinode
@@ -317,12 +392,78 @@ impl Inode {
             BCACHE.brelse(b);
         }
     }
+
+    // Truncate inode (discart contents)
+    // Caller must hold ip->lock
+    pub fn itrunc(&mut self) {
+        if !self.lock.holding() {
+            panic!("itrunc");
+        }
+
+        for i in 0..NDIRECT {
+            if self.addrs[i] != 0 {
+                bfree(self.dev, self.addrs[i]);
+                self.addrs[i] = 0;
+            }
+        }
+
+        // free the indirect node
+        if self.addrs[NDIRECT] != 0 {
+            let b = unsafe { 
+                BCACHE.bread(self.dev, self.addrs[NDIRECT])
+            };
+            let a = unsafe {
+                &mut *(b.data.as_mut_ptr() as *mut [u32; NINDIRECT])
+            };
+            
+            for j in 0..NINDIRECT {
+                if a[j] != 0 {
+                    bfree(self.dev, a[j]);
+                }
+            }
+
+            unsafe {
+                BCACHE.brelse(b);
+            }
+            bfree(self.dev, self.addrs[NDIRECT]);
+        }
+
+        self.size = 0;
+        self.iupdate();
+    }
+
+    // Inode content
+    //
+    // The content (data) associated with each inode is stored
+    // in blocks on the disk. The first NDIRECT block numbers
+    // are listed in ip->addrs[].  The next NINDIRECT blocks are
+    // listed in block ip->addrs[NDIRECT].
+
+    // Return the disk block address of the nth block in inode ip.
+    // If there is no such block, bmap allocates one.
+    pub fn bmap(&mut self, bn: u32) -> u32 {
+        let mut bn = bn as usize;
+        if bn < NDIRECT {
+            if self.addrs[bn] == 0 {
+                self.addrs[bn] = balloc(self.dev);
+            }
+            return self.addrs[bn];
+        }
+        bn -= NDIRECT;
+
+        if bn < NINDIRECT {
+
+        }
+
+        panic!("bmap: out of range");
+    }
+
 }
 
 // Allocate an inode on device dev.
 // Mark it as allocated by  giving it type type.
 // Returns an unlocked but allocated and referenced inode.
-pub fn ialloc(dev: u32, _type: u16) -> &'static mut Inode {
+pub fn ialloc(dev: u32, _type: FileType) -> &'static mut Inode {
     unsafe {
         for inum in 1..SB.ninodes {
             let b = BCACHE.bread(dev, IBLOCK(inum, &SB));
@@ -332,7 +473,7 @@ pub fn ialloc(dev: u32, _type: u16) -> &'static mut Inode {
                 .add((inum % IPB) as usize));
             
             // a free inode
-            if dip._type == 0 {
+            if dip._type == FileType::Empty {
                 dip.zero();
                 dip._type = _type;
                 // mark it allocated on the disk

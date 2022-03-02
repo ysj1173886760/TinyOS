@@ -18,6 +18,16 @@ pub struct SpinLock<T> {
     cpu_id: Cell<isize>,
 }
 
+// the reason we have to turn off interrupt in SpinLock is that
+// this is short time lock, we should release it as sonn as we quit the 
+// critical section. And we don't want to get interrupted by timer which 
+// will cause the situation where we will hold the short time lock for
+// a long time.
+// another reason is the holding the lock should be the semantic of process
+// instead of cpu, but we are storing the related information in CPU structure
+// the only way to achieve both of above requirement is don't switch process
+// while holding spinlock. So we should turn off the interrupts here
+
 // essentially here what it means is only when data protected by lock can safely move ownership though thread,
 // can the lock shared between threads. whoever successfully acquire the lock will have the ownership of data
 unsafe impl<T: Send> Sync for SpinLock<T> {}

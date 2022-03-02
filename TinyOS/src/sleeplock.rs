@@ -2,7 +2,6 @@ use core::cell::{Cell, UnsafeCell};
 
 use crate::{spinlock::SpinLock, process::{myproc, proc_manager}};
 
-
 // Long-term locks for processes
 pub struct SleepLock<T> {
     lock: SpinLock<()>,

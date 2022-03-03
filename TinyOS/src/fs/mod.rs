@@ -33,6 +33,7 @@ mod log;
 mod inode;
 mod file;
 mod bitmap;
+mod device;
 mod directory;
 
 pub fn fsinit(dev: u32) {

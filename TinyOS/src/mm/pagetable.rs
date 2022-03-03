@@ -390,6 +390,13 @@ impl PageTable {
                     
                     match kalloc() {
                         Some(mem) => {
+                            unsafe {
+                                core::ptr::copy(
+                                    pa as *const u8,
+                                    mem as *mut u8,
+                                    PGSIZE,
+                                );
+                            }
                             if self.map_pages(i, PGSIZE, mem, flags).is_err() {
                                 kfree(mem);
                                 self.uvm_unmap(0, i / PGSIZE, true);

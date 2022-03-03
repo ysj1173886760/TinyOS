@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(panic_info_message)]
+#![allow(non_snake_case)]
 
 use mm::pg_round_up;
 use riscv::r_fp;

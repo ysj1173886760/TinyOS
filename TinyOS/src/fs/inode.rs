@@ -129,19 +129,19 @@ pub enum FileType {
 // in-memory copy of an inode
 pub struct Inode {
     // protected by itable
-    dev: u32,       // device number
-    inum: u32,      // inode number
-    refcnt: u32,    // reference count
-    lock: SleepLock<()>, // protect everything below here
-    valid: bool,    // inode has been read from disk
+    pub dev: u32,       // device number
+    pub inum: u32,      // inode number
+    pub refcnt: u32,    // reference count
+    pub lock: SleepLock<()>, // protect everything below here
+    pub valid: bool,    // inode has been read from disk
 
     // copy of disk inode
-    _type: FileType,// File type
-    major: u16,     // Major device number (T_DEVICE only)
-    minor: u16,     // Minor device number (T_DEVICE only)
-    nlink: u16,     // Number of links to inode in file system
-    size: u32,      // Size of file (bytes)
-    addrs: [u32; NDIRECT + 1],  // data block address
+    pub _type: FileType,// File type
+    pub major: u16,     // Major device number (T_DEVICE only)
+    pub minor: u16,     // Minor device number (T_DEVICE only)
+    pub nlink: u16,     // Number of links to inode in file system
+    pub size: u32,      // Size of file (bytes)
+    pub addrs: [u32; NDIRECT + 1],  // data block address
 }
 
 pub struct Stat {
@@ -300,6 +300,16 @@ impl ITable {
         self.iput(ip);
     }
 
+    // leaking the mutability here.
+    // should be used carefully
+    pub unsafe fn iunlockput_leak(&self, ip: &Inode) {
+        let ip = unsafe {
+            &mut *(ip as *const _ as *mut Inode)
+        };
+        ip.iunlock();
+        self.iput(ip);
+    }
+
 }
 
 impl Inode {
@@ -453,17 +463,62 @@ impl Inode {
         bn -= NDIRECT;
 
         if bn < NINDIRECT {
-
+            // load indirect block, allocating if necessary
+            if self.addrs[NDIRECT] == 0 {
+                self.addrs[NDIRECT] = balloc(self.dev);
+            }
+            let bp = unsafe {
+                BCACHE.bread(self.dev, self.addrs[NDIRECT])
+            };
+            let a = unsafe {
+                &mut *(bp.data.as_mut_ptr() as *mut [u32; NINDIRECT])
+            };
+            if a[bn] == 0 {
+                a[bn] = balloc(self.dev);
+                log_write(bp)
+            }
+            unsafe { BCACHE.brelse(bp) };
+            return a[bn];
         }
 
         panic!("bmap: out of range");
+    }
+
+    pub fn bmap_no_alloc(&self, mut bn: usize) -> u32 {
+        if bn < NDIRECT {
+            if self.addrs[bn] == 0 {
+                panic!("bmap no alloc");
+            }
+            return self.addrs[bn];
+        }
+        bn -= NDIRECT;
+
+        if bn < NINDIRECT {
+            // load indirect block, allocating if necessary
+            if self.addrs[NDIRECT] == 0 {
+                panic!("bmap no alloc");
+            }
+            let bp = unsafe {
+                BCACHE.bread(self.dev, self.addrs[NDIRECT])
+            };
+            let a = unsafe {
+                &mut *(bp.data.as_mut_ptr() as *mut [u32; NINDIRECT])
+            };
+            if a[bn] == 0 {
+                panic!("bmap no alloc");
+            }
+            unsafe { BCACHE.brelse(bp) };
+            return a[bn];
+        }
+
+        panic!("bmap_no_alloc: out of range");
     }
 
     // Read data from inode.
     // Caller must hold ip->lock.
     // If user_dst==1, then dst is a user virtual address;
     // otherwise, dst is a kernel address.
-    pub fn readi(&mut self, user_dst: bool, mut dst: usize, mut off: usize, mut n: usize)
+    pub fn readi(&self, user_dst: bool, mut dst: usize, mut off: usize, mut n: usize)
         -> Result<usize, &'static str> {
         // overflow
         if off > self.size as usize || off + n < off {
@@ -475,7 +530,7 @@ impl Inode {
         
         let mut tot = 0;
         while tot < n {
-            let b = unsafe { BCACHE.bread(self.dev, self.bmap(off / BSIZE)) };
+            let b = unsafe { BCACHE.bread(self.dev, self.bmap_no_alloc(off / BSIZE)) };
             let m = core::cmp::min(n - tot, BSIZE - off % BSIZE);
             if either_copyout(user_dst, dst, unsafe { b.data.as_ptr().add(off % BSIZE) }, m).is_err() {
                 unsafe { BCACHE.brelse(b) };
@@ -537,12 +592,12 @@ impl Inode {
 
     // Look for a directory entry in a directory
     // If found, set *poff to byte offset of entry
-    pub fn dirloopup(&mut self, name: [u8; DIRSIZ], poff: Option<&mut usize>) -> Option<&mut Inode> {
+    pub fn dirloopup(&self, name: &[u8; DIRSIZ], poff: Option<&mut usize>) -> Option<&mut Inode> {
         if self._type != FileType::Directory {
             panic!("dirloopup not DIR");
         }
 
-        let mut dir_entry = DirEntry::new();
+        let dir_entry = DirEntry::new();
         let dir_size = core::mem::size_of::<DirEntry>();
         for off in (0..self.size).step_by(dir_size) {
             if self.readi(false, &dir_entry as *const _ as usize, off as usize, dir_size)
@@ -552,7 +607,7 @@ impl Inode {
             if dir_entry.inum == 0 {
                 continue;
             }
-            if name == dir_entry.name {
+            if *name == dir_entry.name {
                 if poff.is_some() {
                     let p = poff.unwrap();
                     *p = off as usize;
@@ -564,7 +619,7 @@ impl Inode {
     }
 
     // Write a new directory entry (name, inum) into the directory dp.
-    pub fn dirlink(&mut self, name: [u8; DIRSIZ], inum: u16) -> bool {
+    pub fn dirlink(&mut self, name: &[u8; DIRSIZ], inum: u16) -> bool {
         // Check that name is not present
         match self.dirloopup(name, None) {
             Some(ip) => {
@@ -596,7 +651,7 @@ impl Inode {
         }
 
         dir_entry.inum = inum;
-        dir_entry.name = name;
+        dir_entry.name = name.clone();
         if self.writei(false, &dir_entry as *const _ as usize, d_off.unwrap() as usize, dir_size)
             .expect("dirlink") != dir_size {
             panic!("dirlink");

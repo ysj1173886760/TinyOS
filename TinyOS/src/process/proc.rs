@@ -1,4 +1,4 @@
-use crate::{mm::{KBox, PageTable, PteFlag, PGSIZE, kalloc, uvm_free, kfree}, spinlock::SpinLock};
+use crate::{mm::{KBox, PageTable, PteFlag, PGSIZE, kalloc, uvm_free, kfree}, spinlock::SpinLock, fs::Inode};
 use super::{TrapFrame, Context, fork_ret, proc_manager, mycpu};
 use crate::consts::memlayout::{TRAMPOLINE, TRAPFRAME};
 
@@ -33,6 +33,9 @@ pub struct Proc {
     pub trapframe: *mut TrapFrame,
     pub context: Context,
     pub name: [u8; 16],
+    // because our Inode stays in Itable
+    // which is a static variable
+    pub cwd: *mut Inode,
 }
 
 impl Proc {
@@ -49,6 +52,7 @@ impl Proc {
             context: Context::new(),
             name: [0; 16],
             killed: false,
+            cwd: ptr::null_mut(),
         }
     }
 

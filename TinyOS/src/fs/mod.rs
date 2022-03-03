@@ -1,4 +1,5 @@
 pub use bio::{Buf};
+pub use inode::Inode;
 
 use self::{superblock::SB, log::{LOG, log_write}, bio::BCACHE, inode::{BBLOCK, BPB}};
 
@@ -7,6 +8,9 @@ pub const FSMAGIC: u32 = 0x10203040;
 pub const NDIRECT: usize = 12;
 pub const NINDIRECT: usize = BSIZE / core::mem::size_of::<u32>();
 pub const MAXFILE: usize = NDIRECT + NINDIRECT;
+
+// root i-number
+pub const ROOTINO: u32 = 1;
 
 #[inline]
 pub fn major(dev: usize) -> usize {
@@ -29,6 +33,7 @@ mod log;
 mod inode;
 mod file;
 mod bitmap;
+mod directory;
 
 pub fn fsinit(dev: u32) {
     unsafe {

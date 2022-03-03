@@ -1,4 +1,4 @@
-use crate::consts::{riscv::{MAXVA, SATP_SV39, SV39FLAGLEN}};
+use crate::{consts::{riscv::{MAXVA, SATP_SV39, SV39FLAGLEN}}, fs::Inode};
 use super::{PGSHIFT, pg_round_down, KBox, PGSIZE, kfree, kalloc, pg_round_up};
 use core::ptr;
 
@@ -520,6 +520,30 @@ impl PageTable {
         } else {
             Err("failed to find null")
         }
+    }
+
+
+    // Load a program segment into pagetable at virtual address va.
+    // va must be page-aligned
+    // and the pages from va to va+sz must already be mapped.
+    // Returns 0 on success, -1 on failure.
+    pub fn loadseg(&mut self, va: usize, ip: &mut Inode, off: usize, sz: usize) -> bool {
+        for i in (0..sz).step_by(PGSIZE) {
+            let pa = self.walkaddr(va + i)
+                .expect("loadseg: address should exist");
+            let n = core::cmp::min(PGSIZE, sz - i);
+            match ip.readi(false, pa, off + i, n) {
+                Ok(size) => {
+                    if size != n {
+                        return false;
+                    }
+                }
+                _ => {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
 }

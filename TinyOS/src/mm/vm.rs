@@ -1,6 +1,7 @@
 use crate::{consts::{memlayout::{UART0, VIRTIO0, PLIC, KERNBASE, PHYSTOP, TRAMPOLINE, TRAPFRAME, KSTACK}, param::NPROC}, riscv::{w_satp, sfence_vma}};
 
 use super::{PageTable, kfree, PGSIZE, pagetable::PteFlag, kalloc, pg_round_up};
+use super::KBox;
 
 static mut kernel_pagetable: PageTable = PageTable::empty();
 
@@ -99,4 +100,13 @@ pub fn proc_mapstacks() {
             }
         }
     }
+}
+
+// Free a process's page table, and free the
+// physical memory it refers to.
+// We guarantee pagetable is valid
+pub fn free_pagetable(mut pagetable: KBox<PageTable>, sz: usize) {
+    pagetable.uvm_unmap(TRAMPOLINE, 1, false);
+    pagetable.uvm_unmap(TRAPFRAME, 1, false);
+    uvm_free(pagetable.into_raw(), sz);
 }

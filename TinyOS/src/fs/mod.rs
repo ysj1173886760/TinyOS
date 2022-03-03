@@ -1,6 +1,8 @@
 pub use bio::{Buf};
-pub use inode::Inode;
+pub use inode::{Inode, ITABLE};
 pub use device::{DEVSW, Device};
+pub use log::{begin_op, end_op};
+pub use directory::{namei};
 
 use self::{superblock::SB, log::{LOG, log_write}, bio::BCACHE, inode::{BBLOCK, BPB}};
 

@@ -1,4 +1,4 @@
-use crate::{mm::{KBox, PageTable, PteFlag, PGSIZE, kalloc, uvm_free, kfree}, spinlock::SpinLock, fs::Inode};
+use crate::{mm::{KBox, PageTable, PteFlag, PGSIZE, kalloc, uvm_free, kfree}, spinlock::SpinLock, fs::{Inode, namei}};
 use super::{TrapFrame, Context, fork_ret, proc_manager, mycpu};
 use crate::consts::memlayout::{TRAMPOLINE, TRAPFRAME};
 
@@ -54,42 +54,6 @@ impl Proc {
             killed: false,
             cwd: ptr::null_mut(),
         }
-    }
-
-    // Create a user page table for a given process,
-    // with no user memory, but with trampoline pages.
-    pub fn create_proc_pagetable(&mut self) -> Result<(), &'static str> {
-        let mut pagetable;
-        match PageTable::uvm_create() {
-            Some(pgtbl) => pagetable = pgtbl,
-            None => {
-                return Err("failed to allocate new pagetable");
-            }
-        }
-
-        extern "C" {
-            fn trampoline();
-        }
-
-        // map the trampoline code (for system call return)
-        // at the highest user virtual address.
-        // only the supervisor uses it, on the way
-        // to/from user space, so not PTE_U.
-        pagetable.map_pages( TRAMPOLINE,
-                            PGSIZE, 
-                            trampoline as usize, 
-                            PteFlag::R as usize | PteFlag::X as usize)
-                            .expect("failed to map trampoline");
-
-        // map the trapframe just below TRAMPOLINE, for trampoline.S.
-        pagetable.map_pages(TRAPFRAME, 
-                            PGSIZE, 
-                            self.trapframe as usize, 
-                            PteFlag::R as usize | PteFlag::W as usize)
-                            .expect("failed to map trapframe");
-        
-        self.pagetable = Some(pagetable);
-        Ok(())
     }
 
     pub fn alloc_trapframe(&mut self) -> Result<(), &'static str> {
@@ -161,7 +125,9 @@ impl Proc {
             ptr::copy_nonoverlapping(init_name.as_ptr(), self.name.as_mut_ptr(), init_name.len());
         }
 
-        //TODO: set current working directory
+        // TODO: un comment this when fs is initialized
+        // let cwd = b"/";
+        // self.cwd = namei(cwd).unwrap() as *mut Inode;
 
         self.state = ProcState::RUNNABLE;
     }
@@ -209,6 +175,7 @@ impl Proc {
         lock.acquire();
     }
 }
+
 
 static INITCODE: [u8; 51] = [
     0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x05, 0x02,

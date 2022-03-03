@@ -26,6 +26,7 @@ mod plic;
 mod sleeplock;
 mod driver;
 mod fs;
+mod syscall;
 
 // ///////////////////////////////////
 // / LANGUAGE STRUCTURES / FUNCTIONS

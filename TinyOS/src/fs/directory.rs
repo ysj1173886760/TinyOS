@@ -1,6 +1,24 @@
 use crate::{consts::param::ROOTDEV, process::myproc};
 
-use super::{file::DIRSIZ, inode::{Inode, ITABLE, FileType}, ROOTINO};
+use super::{inode::{Inode, ITABLE, InodeType}, ROOTINO};
+
+// Directory is a file containing a sequence of dirent structures
+pub const DIRSIZ: usize = 14;
+
+#[repr(C)]
+pub struct DirEntry {
+    pub inum: u16,
+    pub name: [u8; DIRSIZ],
+}
+
+impl DirEntry {
+    pub fn new() -> Self {
+        Self {
+            inum: 0,
+            name: [0; DIRSIZ],
+        }
+    }
+}
 
 // Paths
 
@@ -81,7 +99,7 @@ pub fn namex(path: &[u8], name: &mut [u8; DIRSIZ], nameiparent: bool)
         }
 
         ip.ilock();
-        if ip._type != FileType::Directory {
+        if ip.itype != InodeType::Directory {
             unsafe { ITABLE.iunlockput(ip); }
             return None;
         }

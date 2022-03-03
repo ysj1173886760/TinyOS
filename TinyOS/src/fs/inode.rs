@@ -4,12 +4,12 @@ use array_macro::array;
 
 use crate::{sleeplock::SleepLock, spinlock::SpinLock, consts::param::NINODE, fs::log::{log_write, LOG}, process::{either_copyout, either_copyin}};
 
-use super::{NDIRECT, BSIZE, superblock::{SuperBlock, SB}, bio::BCACHE, bitmap::{bfree, balloc}, NINDIRECT, file::{DIRSIZ, DirEntry}};
+use super::{NDIRECT, BSIZE, superblock::{SuperBlock, SB}, bio::BCACHE, bitmap::{bfree, balloc}, NINDIRECT, directory::{DIRSIZ, DirEntry}};
 
 /// On disk inode structure
 #[repr(C)]
 pub struct DInode {
-    _type: FileType,// File type
+    itype: InodeType,// File type
     major: u16,     // Major device number (T_DEVICE only)
     minor: u16,     // Minor device number (T_DEVICE only)
     nlink: u16,     // Number of links to inode in file system
@@ -19,7 +19,7 @@ pub struct DInode {
 
 impl DInode {
     fn zero(&mut self) {
-        self._type = FileType::Empty;
+        self.itype = InodeType::Empty;
         self.major = 0;
         self.minor = 0;
         self.nlink = 0;
@@ -119,7 +119,7 @@ pub fn BBLOCK(b: u32, sb: &SuperBlock) -> u32 {
 
 #[repr(u16)]
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum FileType {
+pub enum InodeType {
     Empty = 0,
     Directory = 1,
     File = 2,
@@ -136,7 +136,7 @@ pub struct Inode {
     pub valid: bool,    // inode has been read from disk
 
     // copy of disk inode
-    pub _type: FileType,// File type
+    pub itype: InodeType,// File type
     pub major: u16,     // Major device number (T_DEVICE only)
     pub minor: u16,     // Minor device number (T_DEVICE only)
     pub nlink: u16,     // Number of links to inode in file system
@@ -147,7 +147,7 @@ pub struct Inode {
 pub struct Stat {
     dev: u32,   // File System's disk device
     ino: u32,   // Inode number
-    _type: FileType, // Type of file
+    itype: InodeType, // Type of file
     nlink: u16, // Number of links to file
     size: u32,  // Size of file in bytes
 }
@@ -157,7 +157,7 @@ impl Stat {
         Self {
             dev: 0,
             ino: 0,
-            _type: FileType::Empty,
+            itype: InodeType::Empty,
             nlink: 0,
             size: 0,
         }
@@ -167,7 +167,7 @@ impl Stat {
         Self {
             dev: ip.dev,
             ino: ip.inum,
-            _type: ip._type,
+            itype: ip.itype,
             nlink: ip.nlink,
             size: ip.size,
         }
@@ -279,7 +279,7 @@ impl ITable {
 
             ip.itrunc();
             // type = 0 in disk indicate this inode is free
-            ip._type = FileType::Empty;
+            ip.itype = InodeType::Empty;
             ip.iupdate();
 
             ip.valid = false;
@@ -320,7 +320,7 @@ impl Inode {
             refcnt: 0,
             lock: SleepLock::new((), "inode"),
             valid: false,
-            _type: FileType::Empty,
+            itype: InodeType::Empty,
             major: 0,
             minor: 0,
             nlink: 0,
@@ -345,7 +345,7 @@ impl Inode {
                 let dip = &mut *((b.data.as_mut_ptr()
                     as *mut DInode)
                     .add((self.inum % IPB) as usize));
-                self._type = dip._type;
+                self.itype = dip.itype;
                 self.major = dip.major;
                 self.minor = dip.minor;
                 self.nlink = dip.nlink;
@@ -358,7 +358,7 @@ impl Inode {
                 BCACHE.brelse(b);
                 self.valid = true;
 
-                if self._type == FileType::Empty {
+                if self.itype == InodeType::Empty {
                     panic!("ilock: no type");
                 }
             }
@@ -389,7 +389,7 @@ impl Inode {
             let dip = &mut *((b.data.as_mut_ptr()
                 as *mut DInode)
                 .add((self.inum % IPB) as usize));
-            dip._type = self._type;
+            dip.itype = self.itype;
             dip.major = self.major;
             dip.minor = self.minor;
             dip.nlink = self.nlink;
@@ -593,7 +593,7 @@ impl Inode {
     // Look for a directory entry in a directory
     // If found, set *poff to byte offset of entry
     pub fn dirloopup(&self, name: &[u8; DIRSIZ], poff: Option<&mut usize>) -> Option<&mut Inode> {
-        if self._type != FileType::Directory {
+        if self.itype != InodeType::Directory {
             panic!("dirloopup not DIR");
         }
 
@@ -664,7 +664,7 @@ impl Inode {
 // Allocate an inode on device dev.
 // Mark it as allocated by  giving it type type.
 // Returns an unlocked but allocated and referenced inode.
-pub fn ialloc(dev: u32, _type: FileType) -> &'static mut Inode {
+pub fn ialloc(dev: u32, itype: InodeType) -> &'static mut Inode {
     unsafe {
         for inum in 1..SB.ninodes {
             let b = BCACHE.bread(dev, IBLOCK(inum, &SB));
@@ -674,9 +674,9 @@ pub fn ialloc(dev: u32, _type: FileType) -> &'static mut Inode {
                 .add((inum % IPB) as usize));
             
             // a free inode
-            if dip._type == FileType::Empty {
+            if dip.itype == InodeType::Empty {
                 dip.zero();
-                dip._type = _type;
+                dip.itype = itype;
                 // mark it allocated on the disk
                 log_write(b);   
                 BCACHE.brelse(b);

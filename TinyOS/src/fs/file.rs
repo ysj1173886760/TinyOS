@@ -1,8 +1,8 @@
 use array_macro::array;
 
-use crate::{spinlock::SpinLock, consts::param::{NFILE, NDEV}, process::myproc};
+use crate::{spinlock::SpinLock, consts::param::{NFILE, NDEV, MAXOPBLOCKS}, process::myproc};
 
-use super::{Inode, log::{begin_op, end_op}, inode::{ITABLE, Stat}, device::{DEVSW, Device}};
+use super::{Inode, log::{begin_op, end_op}, inode::{ITABLE, Stat}, device::{DEVSW, Device}, BSIZE};
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum FileType {
@@ -64,7 +64,7 @@ impl FileTable {
     }
 
     // Close file f. Decrement ref count, close when reached 0
-    pub fn filecose(&mut self, f: &mut File) {
+    pub fn fileclose(&mut self, f: &mut File) {
         self.lock.acquire();
         if f.refcnt < 1 {
             panic!("fileclose");
@@ -175,6 +175,68 @@ impl File {
             }
             _ => {
                 panic!("fileread");
+            }
+        }
+    }
+
+    pub fn filewrite(&mut self, addr: usize, n: usize)
+        -> Result<usize, &'static str> {
+        if !self.writable {
+            return Err("file is not writeable")
+        }
+
+        match self.ftype {
+            FileType::Device => {
+                if self.major < 0 || 
+                    self.major >= NDEV as u16 || 
+                    unsafe { !DEVSW[self.major as usize].is_none() } {
+                    return Err("wrong major");
+                }
+                let write = unsafe { 
+                    DEVSW[self.major as usize].as_ref().unwrap().write
+                };
+                return write(true, addr, n);
+            },
+            FileType::Inode => {
+                // write a few blocks at a time to avoid exceeding
+                // the maximum log transaction size, including
+                // i-node, indirect block, allocation blocks,
+                // and 2 blocks of slop for non-aligned writes.
+                // this really belongs lower down, since writei()
+                // might be writing a device like the console.  
+                let max = ((MAXOPBLOCKS - 1 - 1 - 2) / 2) * BSIZE;
+                let mut i = 0;
+                while i < n {
+                    let n1 = core::cmp::min(max, n - i);
+                    begin_op();
+                    let ip = self.ip.as_mut().expect("failed to get inode");
+                    ip.ilock();
+                    match ip.writei(true, addr + i, self.off, n1) {
+                        Ok(off) => {
+                            self.off += off;
+                            i += off;
+
+                            ip.iunlock();
+                            end_op();
+
+                            if off != n1 {
+                                break;
+                            }
+                        },
+                        Err(err) => {
+                            ip.iunlock();
+                            end_op();
+                            break;
+                        }
+                    }
+                }
+                return if i == n { Ok(n) } else { Err("failed to write") };
+            },
+            FileType::Pipe => {
+                panic!("not implemented");
+            },
+            _ => {
+                panic!("filewrite");
             }
         }
     }

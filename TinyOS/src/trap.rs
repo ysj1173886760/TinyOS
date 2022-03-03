@@ -1,4 +1,4 @@
-use crate::{consts::{memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ}}, riscv::{w_stvec, SSTATUS_SPP, r_sstatus, r_sepc, r_scause, intr_on, r_stval, intr_off, r_satp, r_tp, SSTATUS_SPIE, w_sstatus, w_sepc, intr_get, w_sip, r_sip}, process::{myproc, cpuid, mycpu}, mm::PGSIZE, plic::{plic_claim, plic_complete}};
+use crate::{consts::{memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ}}, riscv::{w_stvec, SSTATUS_SPP, r_sstatus, r_sepc, r_scause, intr_on, r_stval, intr_off, r_satp, r_tp, SSTATUS_SPIE, w_sstatus, w_sepc, intr_get, w_sip, r_sip}, process::{myproc, cpuid, mycpu}, mm::PGSIZE, plic::{plic_claim, plic_complete}, uart::uartintr, driver::DISK};
 
 extern "C" {
     fn kernelvec();
@@ -211,9 +211,9 @@ fn handle_plic() {
 
     let irq = plic_claim();
     if irq as usize == UART0_IRQ {
-        // TODO: handle uart intr
+        uartintr();
     } else if irq as usize == VIRTIO0_IRQ {
-        // TODO: handle virtio intr
+        unsafe { DISK.intr() }
     } else if irq != 0 {
         crate::println!("unexpected interrupt irq {}", irq);
     }

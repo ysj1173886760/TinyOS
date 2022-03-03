@@ -1,6 +1,8 @@
 use core::ptr;
 use crate::consts::memlayout::UART0;
-use crate::spinlock;
+use crate::driver::consoleintr;
+use crate::process::{proc_manager, myproc};
+use crate::spinlock::{self, push_off, pop_off};
 
 const RHR: usize = 0;
 const THR: usize = 0;
@@ -23,10 +25,10 @@ const UART_TX_BUF_SIZE: usize = 32;
 
 static uart_tx_lock: spinlock::SpinLock<()> = spinlock::SpinLock::new((), "uart");
 
-static uart_tx_w: usize = 0;
-static uart_tx_r: usize = 0;
+static mut uart_tx_w: usize = 0;
+static mut uart_tx_r: usize = 0;
 
-static uart_tx_buf: [u8; UART_TX_BUF_SIZE] = [0; UART_TX_BUF_SIZE];
+static mut uart_tx_buf: [u8; UART_TX_BUF_SIZE] = [0; UART_TX_BUF_SIZE];
 
 macro_rules! Reg {
 	($reg: expr) => {
@@ -74,15 +76,105 @@ pub fn uartinit() {
 	WriteReg!(IER, IER_TX_ENABLE | IER_RX_ENABLE);
 }
 
+// add a character to the output buffer and tell the
+// UART to start sending if it isn't already.
+// blocks if the output buffer is full.
+// because it may block, it can't be called
+// from interrupts; it's only suitable for use
+// by write().
 pub fn uartputc(c: u8) {
-	while (ReadReg!(LSR) & (1 << 5)) == 0 {}
-	WriteReg!(THR, c);
+	uart_tx_lock.acquire();
+
+	// TODO: handle panic here?
+
+	unsafe {
+		loop {
+			if uart_tx_w == uart_tx_r + UART_TX_BUF_SIZE {
+				// buffer is full
+				// wait for uartstart() to open up space in the buffer
+				let p = unsafe { &mut *myproc() };
+				p.sleep(&uart_tx_r as *const _ as usize, &uart_tx_lock);
+			} else {
+				uart_tx_buf[uart_tx_w % UART_TX_BUF_SIZE] = c;
+				uart_tx_w += 1;
+				uartstart();
+				uart_tx_lock.release();
+				return;
+			}
+		}
+	}
 }
 
+// alternate version of uartputc() that doesn't 
+// use interrupts, for use by kernel printf() and
+// to echo characters. it spins waiting for the uart's
+// output register to be empty.
+pub fn uartputc_sync(c: u8) {
+	push_off();
+
+	while (ReadReg!(LSR) & LSR_TX_IDLE) == 0 {}
+	WriteReg!(THR, c);
+
+	pop_off();
+}
+
+// if the UART is idle, and a character is waiting
+// in the transmit buffer, send it.
+// caller must hold uart_tx_lock.
+// called from both the top- and bottom-half.
+fn uartstart() {
+	unsafe {
+		loop {
+			if uart_tx_w == uart_tx_r {
+				// transmit buffer is empty
+				return;
+			}
+
+			if (ReadReg!(LSR) & LSR_TX_IDLE) == 0 {
+				// the UART transmit holding register is full,
+				// so we cannot give it another byte.
+				// it will interrupt when it's ready for a new byte.
+				return;
+			}
+
+			let c = uart_tx_buf[uart_tx_r % UART_TX_BUF_SIZE];
+			uart_tx_r += 1;
+
+			// maybe uartputc is waiting for space in the buffer
+			proc_manager.wakeup(&uart_tx_r as *const _ as usize);
+
+			WriteReg!(THR, c);
+		}
+	}
+}
+
+// read one input character from the UART
+// return -1 if none is waiting
 pub fn uartgetc() -> Option<u8> {
-	if ReadReg!(5) & 1 == 0 {
+	if ReadReg!(LSR) & 0x01 == 0 {
 		None
 	} else {
-		Some(ReadReg!(0))
+		Some(ReadReg!(RHR))
 	}
+}
+
+// handle a uart interrupt, raised because input has
+// arrived, or the uart is ready for more output, or
+// both. called from trap.c.
+pub fn uartintr() {
+	loop {
+		match uartgetc() {
+			Some(c) => {
+				consoleintr(c);
+			}
+			None => {
+				break;
+			}
+		}
+	}
+
+	// send buffered characters
+	uart_tx_lock.acquire();
+	uartstart();
+	uart_tx_lock.release();
 }

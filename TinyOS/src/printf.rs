@@ -1,4 +1,4 @@
-use crate::{spinlock::SpinLock, uart::uartputc};
+use crate::{spinlock::SpinLock, uart::uartputc, driver::consputc};
 
 use core::fmt::{self, Write};
 
@@ -9,7 +9,7 @@ struct Pr {
 impl fmt::Write for Pr {
 	fn write_str(&mut self, s: &str) -> fmt::Result {
 		for byte in s.bytes() {
-			uartputc(byte);
+			consputc(byte);
 		}
 		Ok(())
 	}

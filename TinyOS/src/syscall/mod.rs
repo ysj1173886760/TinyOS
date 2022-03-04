@@ -1,6 +1,6 @@
 use crate::{process::myproc, trap};
 
-use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod}};
+use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod, sys_dup, sys_write, sys_read}};
 
 mod exec;
 mod elf;
@@ -141,7 +141,14 @@ pub fn syscall() {
             panic!("not implemented {}", num);
         }
         SYS_read=> {
-            panic!("not implemented {}", num);
+            match sys_read() {
+                Ok(size) => {
+                    trapframe.a0 = size;
+                }
+                Err(_) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_kill => {
             panic!("not implemented {}", num);
@@ -163,7 +170,14 @@ pub fn syscall() {
             panic!("not implemented {}", num);
         }
         SYS_dup => {
-            panic!("not implemented {}", num);
+            match sys_dup() {
+                Ok(fd) => {
+                    trapframe.a0 = fd;
+                }
+                Err(_) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_getpid => {
             panic!("not implemented {}", num);
@@ -188,7 +202,14 @@ pub fn syscall() {
             }
         }
         SYS_write => {
-            panic!("not implemented {}", num);
+            match sys_write() {
+                Ok(size) => {
+                    trapframe.a0 = size;
+                }
+                Err(_) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_mknod => {
             match sys_mknod() {

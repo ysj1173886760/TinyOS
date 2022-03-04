@@ -1,6 +1,6 @@
 use crate::{fs::{File, Inode, begin_op, create, FileType, InodeType, end_op, namei, ITABLE, FTABLE}, consts::param::{NOFILE, MAXPATH, NDEV}, process::myproc};
 
-use super::{argint, argstr, O_CREATE, O_RDONLY, O_WRONLY, O_RDWR, O_TRUNC};
+use super::{argint, argstr, O_CREATE, O_RDONLY, O_WRONLY, O_RDWR, O_TRUNC, argaddr};
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -165,4 +165,58 @@ pub fn sys_mknod() -> Result<(), &'static str> {
     end_op();
 
     Ok(())
+}
+
+pub fn sys_dup() -> Result<usize, &'static str> {
+    let f;
+    match argfd(0, None) {
+        Some(file) => {
+            f = file;
+        }
+        None => {
+            return Err("failed to get fd");
+        }
+    }
+    let fd = fdalloc(f)?;
+    unsafe { FTABLE.filedup(f) };
+
+    Ok(fd)
+}
+
+pub fn sys_read() -> Result<usize, &'static str> {
+    let f;
+    match argfd(0, None) {
+        Some(file) => {
+            f = file;
+        }
+        None => {
+            return Err("failed to get fd");
+        }
+    }
+
+    let mut n = 0;
+    argint(2, &mut n)?;
+    let mut p = 0;
+    argaddr(1, &mut p)?;
+
+    f.fileread(p, n as usize)
+}
+
+pub fn sys_write() -> Result<usize, &'static str> {
+    let f;
+    match argfd(0, None) {
+        Some(file) => {
+            f = file;
+        }
+        None => {
+            return Err("failed to get fd");
+        }
+    }
+
+    let mut n = 0;
+    argint(2, &mut n)?;
+    let mut p = 0;
+    argaddr(1, &mut p)?;
+
+    f.filewrite(p, n as usize)
 }

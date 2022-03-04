@@ -1,4 +1,4 @@
-use crate::{consts::{memlayout::{UART0, VIRTIO0, PLIC, KERNBASE, PHYSTOP, TRAMPOLINE, TRAPFRAME, KSTACK}, param::NPROC}, riscv::{w_satp, sfence_vma}};
+use crate::{consts::{memlayout::{UART0, VIRTIO0, PLIC, KERNBASE, PHYSTOP, TRAMPOLINE, TRAPFRAME, KSTACK}, param::{NPROC, KSTACKPAGE}}, riscv::{w_satp, sfence_vma}};
 
 use super::{PageTable, kfree, PGSIZE, pagetable::PteFlag, kalloc, pg_round_up};
 use super::KBox;
@@ -47,7 +47,7 @@ extern "C" {
 // only used when booting.
 // does not flush TLB or enable paging.
 pub fn kvmmap(va: usize, pa: usize, size: usize, perm: usize) {
-    crate::println!("kvm_map va:{:#x} pa:{:#x} size:{}", va, pa, size);
+    // crate::println!("kvm_map va:{:#x} pa:{:#x} size:{}", va, pa, size);
 
     unsafe {
         if let Err(err) = kernel_pagetable.map_pages(va, size, pa, perm) {
@@ -91,12 +91,14 @@ pub fn kvminithart() {
 pub fn proc_mapstacks() {
     crate::println!("mapping kernel stasks");
     for i in 0..NPROC {
-        match kalloc() {
-            Some(pa) => {
-                kvmmap(KSTACK(i), pa, PGSIZE, PteFlag::R as usize | PteFlag::W as usize);
-            },
-            None => {
-                panic!("proc_mapstacks");
+        for j in 0..KSTACKPAGE {
+            match kalloc() {
+                Some(pa) => {
+                    kvmmap(KSTACK(i) + j * PGSIZE, pa, PGSIZE, PteFlag::R as usize | PteFlag::W as usize);
+                },
+                None => {
+                    panic!("proc_mapstacks");
+                }
             }
         }
     }

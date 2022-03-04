@@ -70,7 +70,6 @@ impl Proc {
 
     pub fn init_context(&mut self) {
         self.context.clear();
-        // TODO: add forkret
         self.context.set_ra(fork_ret as usize); 
         self.context.set_sp(self.kstack + PGSIZE);
     }

@@ -247,6 +247,15 @@ pub fn r_sepc() -> usize {
     }
 }
 
+#[inline]
+pub fn r_sp() -> usize {
+    unsafe {
+        let x;
+        asm!("mv {}, sp", out(reg) x);
+        return x;
+    }
+}
+
 // supervisor trap cause
 #[inline]
 pub fn r_scause() -> usize {

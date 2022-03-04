@@ -11,3 +11,4 @@ pub const LOGSIZE: usize = MAXOPBLOCKS * 3;
 pub const NBUF: usize = MAXOPBLOCKS * 3;
 pub const FSSIZE: usize = 1000;
 pub const MAXPATH: usize = 128;
+pub const KSTACKPAGE: usize = 10;

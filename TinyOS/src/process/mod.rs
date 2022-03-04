@@ -6,7 +6,7 @@ pub use context::Context;
 pub use trapframe::TrapFrame;
 pub use proc::{Proc, ProcState};
 
-use crate::{consts::{param::NPROC, memlayout::{KSTACK, TRAMPOLINE, TRAPFRAME}}, spinlock::{SpinLock, push_off, pop_off}, mm::{kfree, PageTable, KBox, PGSIZE, PteFlag}, trap::usertrapret};
+use crate::{consts::{param::{NPROC, ROOTDEV}, memlayout::{KSTACK, TRAMPOLINE, TRAPFRAME}}, spinlock::{SpinLock, push_off, pop_off}, mm::{kfree, PageTable, KBox, PGSIZE, PteFlag}, trap::usertrapret, driver::DISK, fs::fsinit};
 
 mod proc;
 mod cpu;
@@ -117,7 +117,6 @@ impl ProcManager {
         for i in 0..self.proc.len() {
             let p = &mut self.proc[i];
             p.lock.acquire();
-            crate::println!("{} {:?}", p.pid, p.state);
             match p.state {
                 ProcState::RUNNABLE => {
                     return Some(&mut self.proc[i]);
@@ -164,6 +163,7 @@ fn fork_ret() {
             // File system initialization must be run in the context of a
             // regular process (e.g., because it calls sleep), and thus cannot
             // be run from main().
+            fsinit(ROOTDEV);
             first = false;
         }
     }

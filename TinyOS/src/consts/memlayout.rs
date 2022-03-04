@@ -1,4 +1,4 @@
-use super::riscv::MAXVA;
+use super::{riscv::MAXVA, param::KSTACKPAGE};
 use crate::mm::PGSIZE;
 
 // Physical memory layout
@@ -62,7 +62,7 @@ pub const fn PLIC_SCLAIM(hart: usize) -> usize {
 // for use by the kernel and user pages
 // from physical address 0x80000000 to PHYSTOP.
 pub const KERNBASE: usize = 0x80000000;
-pub const PHYSTOP: usize = KERNBASE + 128 * 1024 * 1024;
+pub const PHYSTOP: usize = KERNBASE + 1024 * 1024 * 1024;
 
 // map the trampoline page to the highest address,
 // in both user and kernel space.
@@ -71,7 +71,7 @@ pub const TRAMPOLINE: usize = MAXVA - PGSIZE;
 // map kernel stacks beneath the trampoline,
 // each surrounded by invalid guard pages.
 pub const fn KSTACK(p: usize) -> usize {
-    TRAMPOLINE - (p + 1) * 2 * PGSIZE
+    TRAMPOLINE - (p + 1) * (KSTACKPAGE + 1) * PGSIZE
 }
 
 // User memory layout.

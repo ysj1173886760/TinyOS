@@ -115,6 +115,8 @@ pub fn syscall() {
     let p = unsafe { &mut *myproc() };
     let trapframe = unsafe { &mut *p.trapframe };
     
+    // crate::println!("{} {:?} kernel sp {:#x}", core::str::from_utf8(&p.name).unwrap(), p.trapframe, trapframe.kernel_sp);
+
     let num = trapframe.a7;
     match num {
         SYS_fork => {

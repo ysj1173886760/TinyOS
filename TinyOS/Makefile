@@ -6,7 +6,8 @@ KERNEL =./target/$(TARGET)/$(TYPE)/tiny_os
 
 USER = user
 INCLUDE = include
-CPUS = 3
+CPUS = 1
+MEM = 1G
 
 CC = riscv64-linux-gnu-gcc 
 LD = riscv64-linux-gnu-ld
@@ -31,8 +32,8 @@ endif
 LDFLAGS = -z max-page-size=4096
 
 QEMU = qemu-system-riscv64
-QEMUOPTS = -machine virt -bios none -kernel $(KERNEL) -m 128M -smp $(CPUS) -nographic
-QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
+QEMUOPTS = -machine virt -bios none -kernel $(KERNEL) -m $(MEM) -smp $(CPUS) -nographic
+QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0 -cpu rv64
 QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 
 qemu: $(KERNEL) fs.img
@@ -40,7 +41,7 @@ qemu: $(KERNEL) fs.img
 
 qemu-gdb: $(KERNEL) fs.img
 	@echo "*** Now run 'gdb' in another window." 1>&2
-	$(QEMU) -S $(QEMUOPTS)
+	$(QEMU) -S -s $(QEMUOPTS)
 
 $(KERNEL): FORCE
 	RUSTFLAGS="$(RUSTFLAGS)" cargo xbuild --target=$(TARGET)
@@ -111,7 +112,7 @@ UPROGS=\
 fs.img: mkfs/mkfs README.md $(UPROGS)
 	mkfs/mkfs fs.img README.md $(UPROGS)
 
-objdump: $(CARGO_OUTPUT)
+objdump: $(KERNEL)
 	riscv64-linux-gnu-objdump -S $(KERNEL) > tiny_os.asm
 
 -include user/*.d

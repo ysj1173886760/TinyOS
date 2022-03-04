@@ -205,6 +205,8 @@ impl Disk {
         status |= VIRTIO_CONFIG_S_DRIVER_OK;
         write_offset(VIRTIO_MMIO_STATUS, status);
 
+        write_offset(VIRTIO_MMIO_GUEST_PAGE_SIZE, PGSIZE as u32);
+
         // initialize queue 0
         write_offset(VIRTIO_MMIO_QUEUE_SEL, 0);
         let max = read_offset(VIRTIO_MMIO_QUEUE_NUM_MAX);
@@ -348,7 +350,7 @@ impl Disk {
 
         // record struct buf for virtio_disk_intr
         buf.disk = true;
-        self.info[idx[0]].buf_channel = Some(buf as *mut _ as usize);
+        self.info[idx[0]].buf_channel = Some(buf as *const _ as usize);
 
         // tell the device the first index in our chain of descriptors
         self.avail.ring[self.avail.idx as usize % NUM] = idx[0] as u16;
@@ -368,7 +370,7 @@ impl Disk {
         while buf.disk {
             let p = unsafe { &mut *myproc() };
             // sleep on this buffer
-            p.sleep(buf as *mut _ as usize, &self.lock);
+            p.sleep(buf as *const _ as usize, &self.lock);
         }
 
         self.info[idx[0]].buf_channel = None;
@@ -379,6 +381,7 @@ impl Disk {
 
     // called by the interrupt handler
     pub fn intr(&mut self) {
+
         self.lock.acquire();
 
         // the device won't raise another interrupt until we tell it

@@ -36,7 +36,6 @@ impl Cpu {
         loop {
             // Avoid deadlock by ensuring that devices can interrupt.
             intr_on();
-            crate::println!("here");
             match proc_manager.get_runnable() {
                 Some(p) => {
                     // Switch to chosen process.  It is the process's job
@@ -44,7 +43,6 @@ impl Cpu {
                     // before jumping back to us.
                     p.state = ProcState::RUNNING;
                     self.proc = p as *mut Proc;
-                    crate::println!("running {}", p.pid);
                     swtch(&mut self.context as *mut Context,
                           &mut p.context as *mut Context);
                     

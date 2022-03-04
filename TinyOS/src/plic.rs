@@ -19,7 +19,7 @@ fn read_volatile(addr: usize) -> u32 {
 
 pub fn plicinit() {
     // set desired IRQ priorities non-zero (otherwise disabled).
-    write_volatile(PLIC  + UART0_IRQ * 4, 1);
+    write_volatile(PLIC + UART0_IRQ * 4, 1);
     write_volatile(PLIC + VIRTIO0_IRQ * 4, 1);
 }
 

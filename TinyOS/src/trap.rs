@@ -1,4 +1,4 @@
-use crate::{consts::{memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ}}, riscv::{w_stvec, SSTATUS_SPP, r_sstatus, r_sepc, r_scause, intr_on, r_stval, intr_off, r_satp, r_tp, SSTATUS_SPIE, w_sstatus, w_sepc, intr_get, w_sip, r_sip}, process::{myproc, cpuid, mycpu}, mm::PGSIZE, plic::{plic_claim, plic_complete}, uart::uartintr, driver::DISK, syscall::syscall};
+use crate::{consts::{memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ}, param::KSTACKPAGE}, riscv::{w_stvec, SSTATUS_SPP, r_sstatus, r_sepc, r_scause, intr_on, r_stval, intr_off, r_satp, r_tp, SSTATUS_SPIE, w_sstatus, w_sepc, intr_get, w_sip, r_sip, r_sp}, process::{myproc, cpuid, mycpu}, mm::PGSIZE, plic::{plic_claim, plic_complete}, uart::uartintr, driver::DISK, syscall::syscall};
 
 extern "C" {
     fn kernelvec();
@@ -116,7 +116,7 @@ pub fn usertrapret() {
     // the process next re-enters the kernel.
     let trapframe = unsafe { &mut *p.trapframe };
     trapframe.kernel_satp = r_satp();           // kernel page table
-    trapframe.kernel_sp = p.kstack + PGSIZE;    // process's kernel stack
+    trapframe.kernel_sp = p.kstack + PGSIZE * KSTACKPAGE;    // process's kernel stack
     trapframe.kernel_trap = usertrap as usize;
     trapframe.kernel_hartid = r_tp();           // hartid for cpuid()
 

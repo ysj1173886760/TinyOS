@@ -1,46 +1,119 @@
 LINKER_SCRIPT=-Tsrc/kernel.ld
 RUSTFLAGS=-C link-arg=$(LINKER_SCRIPT)
 TARGET=riscv64gc-unknown-none-elf
-TYPE=release
-CARGO_OUTPUT=./target/$(TARGET)/$(TYPE)/tiny_os
-OUTPUT=kernel.img
-OBJCOPY_CMD = cargo objcopy \
-		-- \
-		--strip-all \
-		-O binary
+TYPE=debug
+KERNEL =./target/$(TARGET)/$(TYPE)/tiny_os
 
-QEMU_BINARY=qemu-system-riscv64
-MACH=virt
-CPU=rv64
-CPUS=4
-MEM=128M
-QEMU_DRIVE=hdd.img
+USER = user
+INCLUDE = include
+CPUS = 3
 
-all: $(CARGO_OUTPUT)
+CC = riscv64-linux-gnu-gcc 
+LD = riscv64-linux-gnu-ld
+OBJCOPY = riscv64-linux-gnu-objcopy
+OBJDUMP = riscv64-linux-gnu-objdump
 
-$(CARGO_OUTPUT): FORCE
-	RUSTFLAGS="$(RUSTFLAGS)" cargo xbuild --target=$(TARGET) --release
+CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb
+CFLAGS += -MD
+CFLAGS += -mcmodel=medany
+CFLAGS += -ffreestanding -fno-common -nostdlib -mno-relax
+CFLAGS += -I.
+CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
-# $(OUTPUT): $(CARGO_OUTPUT)
-#	$(OBJCOPY_CMD) $< ./$(OUTPUT)
+# Disable PIE when possible (for Ubuntu 16.10 toolchain)
+ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]no-pie'),)
+CFLAGS += -fno-pie -no-pie
+endif
+ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]nopie'),)
+CFLAGS += -fno-pie -nopie
+endif
 
-$(QEMU_DRIVE):
-	dd if=/dev/zero of=$@ count=32 bs=1048576
+LDFLAGS = -z max-page-size=4096
 
-qemu: $(CARGO_OUTPUT) $(QEMU_DRIVE)
-	$(QEMU_BINARY) -machine $(MACH) -cpu $(CPU) -smp $(CPUS) -m $(MEM)  -nographic -serial mon:stdio -bios none -kernel $(CARGO_OUTPUT) -drive if=none,format=raw,file=$(QEMU_DRIVE),id=foo -device virtio-blk-device,drive=foo
+QEMU = qemu-system-riscv64
+QEMUOPTS = -machine virt -bios none -kernel $(KERNEL) -m 128M -smp $(CPUS) -nographic
+QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
+QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 
-qemu-gdb: $(CARGO_OUTPUT) $(QEMU_DRIVE)
-	$(QEMU_BINARY) -s -S -machine $(MACH) -cpu $(CPU) -smp $(CPUS) -m $(MEM)  -nographic -serial mon:stdio -bios none -kernel $(CARGO_OUTPUT) -drive if=none,format=raw,file=$(QEMU_DRIVE),id=foo -device virtio-blk-device,drive=foo
+qemu: $(KERNEL) fs.img
+	$(QEMU) $(QEMUOPTS)
 
-# objdump: $(CARGO_OUTPUT)
-# 	cargo objdump --target $(TARGET) -- -disassemble -no-show-raw-insn -print-imm-hex $(CARGO_OUTPUT)
+qemu-gdb: $(KERNEL) fs.img
+	@echo "*** Now run 'gdb' in another window." 1>&2
+	$(QEMU) -S $(QEMUOPTS)
+
+$(KERNEL): FORCE
+	RUSTFLAGS="$(RUSTFLAGS)" cargo xbuild --target=$(TARGET)
+
+asm: $(KERNEL)
+	$(OBJDUMP) -S $(KERNEL) > kernel.S
+
+clean:
+	rm -rf kernel.S
+	cargo clean
+	rm -f $(USER)/*.o $(USER)/*.d $(USER)/*.asm $(USER)/*.sym \
+	$(USER)/initcode $(USER)/initcode.out fs.img \
+	mkfs/mkfs $(USER)/usys.S \
+	$(UPROGS)
+
+$(USER)/initcode: $(USER)/initcode.S
+	$(CC) $(CFLAGS) -march=rv64g -nostdinc -I. -Iinclude -c $(USER)/initcode.S -o $(USER)/initcode.o
+	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o $(USER)/initcode.out $(USER)/initcode.o
+	$(OBJCOPY) -S -O binary $(USER)/initcode.out $(USER)/initcode
+	$(OBJDUMP) -S $(USER)/initcode.o > $(USER)/initcode.asm
+
+ULIB = $(USER)/ulib.o $(USER)/usys.o $(USER)/printf.o $(USER)/umalloc.o
+
+_%: %.o $(ULIB)
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
+	$(OBJDUMP) -S $@ > $*.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
+
+$(USER)/usys.S : $(USER)/usys.pl
+	perl $(USER)/usys.pl > $(USER)/usys.S
+
+$(USER)/usys.o : $(USER)/usys.S
+	$(CC) $(CFLAGS) -c -o $(USER)/usys.o $(USER)/usys.S
+
+$(USER)/_forktest: $(USER)/forktest.o $(ULIB)
+	# forktest has less library code linked in - needs to be small
+	# in order to be able to max out the proc table.
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $(USER)/_forktest $(USER)/forktest.o $(USER)/ulib.o $(USER)/usys.o
+	$(OBJDUMP) -S $(USER)/_forktest > $(USER)/forktest.asm
+
+mkfs/mkfs: mkfs/mkfs.c $(INCLUDE)/fs.h $(INCLUDE)/param.h
+	gcc -Werror -Wall -I. -o mkfs/mkfs mkfs/mkfs.c
+
+# Prevent deletion of intermediate files, e.g. cat.o, after first build, so
+# that disk image changes after first build are persistent until clean.  More
+# details:
+# http://www.gnu.org/software/make/manual/html_node/Chained-Rules.html
+.PRECIOUS: %.o
+
+UPROGS=\
+	$(USER)/_cat\
+	$(USER)/_echo\
+	$(USER)/_forktest\
+	$(USER)/_grep\
+	$(USER)/_init\
+	$(USER)/_kill\
+	$(USER)/_ln\
+	$(USER)/_ls\
+	$(USER)/_mkdir\
+	$(USER)/_rm\
+	$(USER)/_sh\
+	$(USER)/_stressfs\
+	$(USER)/_usertests\
+	$(USER)/_grind\
+	$(USER)/_wc\
+	$(USER)/_zombie\
+
+fs.img: mkfs/mkfs README.md $(UPROGS)
+	mkfs/mkfs fs.img README.md $(UPROGS)
 
 objdump: $(CARGO_OUTPUT)
-	riscv64-linux-gnu-objdump -S $(CARGO_OUTPUT) > tiny_os.asm
+	riscv64-linux-gnu-objdump -S $(KERNEL) > tiny_os.asm
 
-.PHONY: clean
-clean:
-	cargo clean
-	rm -f $(CARGO_OUTPUT) $(OUTPUT)
+-include user/*.d
+
 FORCE:

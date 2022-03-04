@@ -6,7 +6,7 @@
 use mm::pg_round_up;
 use riscv::r_fp;
 
-use crate::{process::{proc_manager, mycpu}, trap::trap_init_hart, mm::{kinit, kvminit, kvminithart, pg_round_down}, uart::uartinit};
+use crate::{process::{proc_manager, mycpu}, trap::trap_init_hart, mm::{kinit, kvminit, kvminithart, pg_round_down}, uart::uartinit, driver::{consoleinit, DISK}, plic::{plicinit, plicinithart}, fs::BCACHE};
 
 core::arch::global_asm!(include_str!("asm/entry.S"));
 core::arch::global_asm!(include_str!("asm/kernelvec.S"));
@@ -84,17 +84,22 @@ pub fn backtrace() {
 fn kmain() {
     // init procedure is here
 	if process::cpuid() == 0 {
-
-        uartinit();
+		consoleinit();
         println!("xv6-rust is booting");
         kinit();
         kvminit();
         // turn on paging
         kvminithart();
         // initialize kstack
-
         unsafe { process::proc_manager.proc_init(); }
         trap_init_hart();
+		// set up interrupt controller
+		plicinit();
+		// ask PLIC for device interrupts
+		plicinithart();
+		// initialize buffer cache
+		unsafe { BCACHE.binit(); }
+		unsafe { DISK.init(); }
         unsafe { proc_manager.user_init(); }
 	} else {
 		return

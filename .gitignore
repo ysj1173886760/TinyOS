@@ -1,0 +1,8 @@
+*.sym
+*.asm
+*.o
+*.d
+/mkfs/mkfs
+fs.img
+/target
+/.vscode

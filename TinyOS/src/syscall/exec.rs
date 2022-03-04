@@ -1,6 +1,6 @@
 use crate::{consts::param::{MAXPATH, MAXARG}, mm::{PGSIZE, free_pagetable, PageTable, KBox, pg_round_up}, process::{myproc, proc_manager, create_proc_pagetable}, fs::{begin_op, namei, end_op, ITABLE}};
 
-use super::elf::{ELFHeader, ELF_MAGIC, ProgramHeader, ELF_PROG_LOAD};
+use super::{elf::{ELFHeader, ELF_MAGIC, ProgramHeader, ELF_PROG_LOAD}, strlen};
 
 pub fn exec(path: &mut [u8; MAXPATH], 
             argv: &mut [Option<[u8; PGSIZE]>; MAXARG]) 
@@ -145,7 +145,7 @@ pub fn exec(path: &mut [u8; MAXPATH],
     // push argument strings, prepare rest of stack in ustack
     let mut argc = 0;
     while argv[argc].is_some() {
-        let len = get_len(argv[argc].as_ref().unwrap()) + 1;
+        let len = strlen(argv[argc].as_ref().unwrap()) + 1;
         sp -= len;
         sp -= sp % 16;  // riscv sp must be 16 aligned
 
@@ -197,12 +197,4 @@ pub fn exec(path: &mut [u8; MAXPATH],
     free_pagetable(oldpagetable.unwrap(), oldsz);
 
     return Ok(argc as u32);
-}
-
-fn get_len(str: &[u8]) -> usize {
-    let mut cur = 0;
-    while str[cur] != 0 {
-        cur += 1;
-    }
-    return cur;
 }

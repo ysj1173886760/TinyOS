@@ -12,7 +12,6 @@ mod proc;
 mod cpu;
 mod context;
 mod trapframe;
-mod syscall;
 
 pub static mut proc_manager: ProcManager = ProcManager::new();
 

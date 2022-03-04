@@ -4,7 +4,7 @@ use crate::consts::memlayout::{TRAMPOLINE, TRAPFRAME};
 
 use core::ptr;
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum ProcState {
     UNUSED,
     USED,

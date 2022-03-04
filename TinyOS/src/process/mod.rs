@@ -117,6 +117,7 @@ impl ProcManager {
         for i in 0..self.proc.len() {
             let p = &mut self.proc[i];
             p.lock.acquire();
+            crate::println!("{} {:?}", p.pid, p.state);
             match p.state {
                 ProcState::RUNNABLE => {
                     return Some(&mut self.proc[i]);

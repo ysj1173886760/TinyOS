@@ -155,9 +155,11 @@ impl File {
                 match ip.readi(true, addr, self.off, n) {
                     Ok(off) => {
                         self.off += off;
+                        ip.iunlock();
                         return Ok(off);
                     },
                     Err(err) => {
+                        ip.iunlock();
                         return Err(err);
                     }
                 }

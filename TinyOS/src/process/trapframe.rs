@@ -37,3 +37,45 @@ pub struct TrapFrame {
     /* 272 */ pub t5: usize,
     /* 280 */ pub t6: usize,
 }
+
+impl TrapFrame {
+    pub fn copy_from(&mut self, old: &TrapFrame) {
+        self.ra = old.ra;
+        self.sp = old.sp;
+        self.gp = old.gp;
+        self.tp = old.tp;
+        self.t0 = old.t0;
+        self.t1 = old.t1;
+        self.t2 = old.t2;
+        self.s0 = old.s0;
+        self.s1 = old.s1;
+        self.a0 = old.a0;
+        self.a1 = old.a1;
+        self.a2 = old.a2;
+        self.a3 = old.a3;
+        self.a4 = old.a4;
+        self.a5 = old.a5;
+        self.a6 = old.a6;
+        self.a7 = old.a7;
+        self.s2 = old.s2;
+        self.s3 = old.s3;
+        self.s4 = old.s4;
+        self.s5 = old.s5;
+        self.s6 = old.s6;
+        self.s7 = old.s7;
+        self.s8 = old.s8;
+        self.s9 = old.s9;
+        self.s1 = old.s1;
+        self.s1 = old.s1;
+        self.t3 = old.t3;
+        self.t4 = old.t4;
+        self.t5 = old.t5;
+        self.t6 = old.t6;
+        self.kernel_satp = old.kernel_satp;
+        self.kernel_sp = old.kernel_sp;
+        self.kernel_trap = old.kernel_trap;
+        self.epc = old.epc;
+        self.kernel_hartid = old.kernel_hartid;
+    }
+
+}

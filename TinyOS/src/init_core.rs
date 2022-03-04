@@ -1,6 +1,9 @@
+use crate::consts::memlayout::{CLINT_MTIME, CLINT_MTIMECMP};
 use crate::riscv;
 use crate::kmain;
+use crate::riscv::r_mhartid;
 use core::arch::asm;
+
 
 // entry.S jumps here in machine mode on stack0.
 #[no_mangle]
@@ -41,4 +44,24 @@ pub fn init_core() -> ! {
         asm!("mret");
     }
     loop {}
+}
+
+// set up to receive timer interrupts in machine mode,
+// which arrive at timervec in kernelvec.S,
+// which turns them into software interrupts for
+// devintr() in trap.c.
+fn timerinit() {
+    // each CPU has a separate source of timer interrupts.
+    let id = r_mhartid();
+
+    // ask the CLINT for a timer interrupt.
+    let interval = 1000000;
+    unsafe {
+        core::ptr::write_volatile(CLINT_MTIMECMP(id) as *mut usize, CLINT_MTIME + interval);
+    }
+
+    // prepare information in scratch[] for timervec.
+    // scratch[0..2] : space for timervec to save registers.
+    // scratch[3] : address of CLINT MTIMECMP register.
+    // scratch[4] : desired interval (in cycles) between timer interrupts.
 }

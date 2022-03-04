@@ -29,11 +29,11 @@ pub const VIRTIO0: usize = 0x10001000;
 pub const VIRTIO0_IRQ: usize = 1;
 
 // core local interruptor (CLINT), which contains the timer.
-pub const CLIENT: usize = 0x2000000;
+pub const CLINT: usize = 0x2000000;
 pub const fn CLINT_MTIMECMP(hartid: usize) -> usize {
-    CLIENT + 0x4000 + 8 * hartid
+    CLINT + 0x4000 + 8 * hartid
 }
-pub const CLIENT_MTIME: usize = CLIENT + 0xBFF8;// cycles since boot.
+pub const CLINT_MTIME: usize = CLINT + 0xBFF8;// cycles since boot.
 
 // qemu puts platform-level interrupt controller (PLIC) here.
 pub const PLIC: usize = 0x0c000000;

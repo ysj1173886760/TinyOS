@@ -1,10 +1,11 @@
 use crate::{process::myproc, trap};
 
-use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod, sys_dup, sys_write, sys_read}};
+use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod, sys_dup, sys_write, sys_read}, sysproc::sys_fork};
 
 mod exec;
 mod elf;
 mod sysfile;
+mod sysproc;
 
 pub const O_RDONLY: u32 = 0x000;
 pub const O_WRONLY: u32 = 0x001;
@@ -129,7 +130,14 @@ pub fn syscall() {
     let num = trapframe.a7;
     match num {
         SYS_fork => {
-            panic!("not implemented {}", num);
+            match sys_fork() {
+                Ok(pid) => {
+                    trapframe.a0 = pid;
+                }
+                Err(_) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_exit => {
             panic!("not implemented {}", num);

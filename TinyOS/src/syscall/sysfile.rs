@@ -132,3 +132,37 @@ pub fn sys_open() -> Result<usize, &'static str> {
     
     Ok(fd)
 }
+
+pub fn sys_mknod() -> Result<(), &'static str> {
+    let mut path: [u8; MAXPATH] = [0; MAXPATH];
+    let mut major = 0;
+    let mut minor = 0;
+    begin_op();
+    if argstr(0, &mut path, MAXPATH).is_err() {
+        end_op();
+        return Err("failed to get argument");
+    }
+    if argint(1, &mut major).is_err() {
+        end_op();
+        return Err("failed to get argument");
+    }
+    if argint(2, &mut minor).is_err() {
+        end_op();
+        return Err("failed to get argument");
+    }
+
+    let ip;
+    match create(&path, InodeType::Device, major as u16, minor as u16) {
+        Some(i) => {
+            ip = i;
+        }
+        None => {
+            end_op();
+            return Err("failed to create device");
+        }
+    }
+    unsafe { ITABLE.iunlockput(ip) };
+    end_op();
+
+    Ok(())
+}

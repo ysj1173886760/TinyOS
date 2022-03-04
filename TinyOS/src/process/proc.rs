@@ -1,4 +1,6 @@
-use crate::{mm::{KBox, PageTable, PteFlag, PGSIZE, kalloc, uvm_free, kfree}, spinlock::SpinLock, fs::{Inode, namei}};
+use array_macro::array;
+
+use crate::{mm::{KBox, PageTable, PteFlag, PGSIZE, kalloc, uvm_free, kfree}, spinlock::SpinLock, fs::{Inode, namei, File}, consts::param::NOFILE};
 use super::{TrapFrame, Context, fork_ret, proc_manager, mycpu};
 use crate::consts::memlayout::{TRAMPOLINE, TRAPFRAME};
 
@@ -36,6 +38,10 @@ pub struct Proc {
     // because our Inode stays in Itable
     // which is a static variable
     pub cwd: *mut Inode,
+    // Open files
+    // i really don't want to use lifetime specifier here
+    // so use raw pointer directly
+    pub ofile: [*mut File; NOFILE],
 }
 
 impl Proc {
@@ -53,6 +59,7 @@ impl Proc {
             name: [0; 16],
             killed: false,
             cwd: ptr::null_mut(),
+            ofile: array![_ => core::ptr::null_mut(); NOFILE],
         }
     }
 
@@ -124,9 +131,8 @@ impl Proc {
             ptr::copy_nonoverlapping(init_name.as_ptr(), self.name.as_mut_ptr(), init_name.len());
         }
 
-        // TODO: un comment this when fs is initialized
-        // let cwd = b"/";
-        // self.cwd = namei(cwd).unwrap() as *mut Inode;
+        let cwd = b"/\0";
+        self.cwd = namei(cwd).unwrap() as *mut Inode;
 
         self.state = ProcState::RUNNABLE;
     }

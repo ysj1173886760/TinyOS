@@ -4,7 +4,7 @@ use array_macro::array;
 
 use crate::{sleeplock::SleepLock, spinlock::SpinLock, consts::param::NINODE, fs::log::{log_write, LOG}, process::{either_copyout, either_copyin}};
 
-use super::{NDIRECT, BSIZE, superblock::{SuperBlock, SB}, bio::BCACHE, bitmap::{bfree, balloc}, NINDIRECT, directory::{DIRSIZ, DirEntry}};
+use super::{NDIRECT, BSIZE, superblock::{SuperBlock, SB}, bio::BCACHE, bitmap::{bfree, balloc}, NINDIRECT, directory::{DIRSIZ, DirEntry}, strclone, strcmp};
 
 /// On disk inode structure
 #[repr(C)]
@@ -592,7 +592,7 @@ impl Inode {
 
     // Look for a directory entry in a directory
     // If found, set *poff to byte offset of entry
-    pub fn dirloopup(&self, name: &[u8; DIRSIZ], poff: Option<&mut usize>) -> Option<&mut Inode> {
+    pub fn dirloopup(&self, name: &[u8], poff: Option<&mut usize>) -> Option<&mut Inode> {
         if self.itype != InodeType::Directory {
             panic!("dirloopup not DIR");
         }
@@ -608,7 +608,7 @@ impl Inode {
                 continue;
             }
 
-            if *name == dir_entry.name {
+            if strcmp(name, &dir_entry.name) {
                 if poff.is_some() {
                     let p = poff.unwrap();
                     *p = off as usize;
@@ -620,7 +620,7 @@ impl Inode {
     }
 
     // Write a new directory entry (name, inum) into the directory dp.
-    pub fn dirlink(&mut self, name: &[u8; DIRSIZ], inum: u16) -> bool {
+    pub fn dirlink(&mut self, name: &[u8], inum: u32) -> bool {
         // Check that name is not present
         match self.dirloopup(name, None) {
             Some(ip) => {
@@ -651,13 +651,35 @@ impl Inode {
             return false;
         }
 
-        dir_entry.inum = inum;
-        dir_entry.name = name.clone();
+        dir_entry.inum = inum as u16;
+        dir_entry.name = strclone(name);
         if self.writei(false, &dir_entry as *const _ as usize, d_off.unwrap() as usize, dir_size)
             .expect("dirlink") != dir_size {
             panic!("dirlink");
         }
 
+        true
+    }
+
+    // Is the directory dp empty except for "." and ".." ?
+    pub fn isDirEmpty(&mut self) -> bool {
+        let mut dir_entry = DirEntry::new();
+        let dir_size = core::mem::size_of::<DirEntry>();
+        for off in (2 * dir_size..self.size as usize).step_by(dir_size) {
+            match self.readi(false, &dir_entry as *const _ as usize, off, dir_size) {
+                Ok(sz) => {
+                    if sz != dir_size {
+                        panic!("isdirempty: readi");
+                    }
+                }
+                Err(_) => {
+                    panic!("isdirempty: readi");
+                }
+            }
+            if dir_entry.inum != 0 {
+                return false;
+            }
+        }
         true
     }
 }

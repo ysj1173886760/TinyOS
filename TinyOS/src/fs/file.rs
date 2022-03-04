@@ -13,16 +13,16 @@ pub enum FileType {
 }
 
 pub struct File {
-    ftype: FileType,
-    refcnt: usize,
-    readable: bool,
-    writable: bool,
+    pub ftype: FileType,
+    pub refcnt: usize,
+    pub readable: bool,
+    pub writable: bool,
     // TODO: implement pipe here
     // Inode and Device
-    ip: Option<&'static mut Inode>,
-    off: usize,
+    pub ip: *mut Inode,
+    pub off: usize,
     // Device
-    major: u16,
+    pub major: u16,
 }
 
 pub struct FileTable {
@@ -30,8 +30,10 @@ pub struct FileTable {
     file: [File; NFILE],
 }
 
+pub static mut FTABLE: FileTable = FileTable::new();
+
 impl FileTable {
-    pub fn new() -> Self {
+    const fn new() -> Self {
         Self {
             lock: SpinLock::new((), "ftable"),
             file: array![_ => File::new(); NFILE],
@@ -76,8 +78,10 @@ impl FileTable {
         }
 
         // otherwise, we close file
-        let ip = f.ip.take();
+        let ip = unsafe { &mut *f.ip };
         let ftype = f.ftype;
+        f.refcnt = 0;
+        f.ftype = FileType::None;
         self.lock.release();
 
         if ftype == FileType::Pipe {
@@ -85,7 +89,7 @@ impl FileTable {
         } else if ftype == FileType::Inode ||
                   ftype == FileType::Device {
             begin_op();
-            unsafe { ITABLE.iput(ip.unwrap()) };
+            unsafe { ITABLE.iput(ip) };
             end_op();
         }
     }
@@ -93,13 +97,13 @@ impl FileTable {
 }
 
 impl File {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             ftype: FileType::None,
             refcnt: 0,
             readable: false,
             writable: false,
-            ip: None,
+            ip: core::ptr::null_mut(),
             off: 0,
             major: 0,
         }
@@ -129,7 +133,7 @@ impl File {
 
     // helper function for filestat
     fn get_stat(&mut self) -> Stat {
-        let ip = self.ip.as_mut().expect("failed to get inode");
+        let ip = unsafe { &mut *self.ip };
         (*ip).ilock();
         let st = Stat::from_inode(ip);
         (*ip).iunlock();
@@ -150,7 +154,7 @@ impl File {
                 panic!("not implemented");
             }
             FileType::Inode => {
-                let ip = self.ip.as_mut().expect("failed to get inode");
+                let ip = unsafe { &mut *self.ip };
                 ip.ilock();
                 match ip.readi(true, addr, self.off, n) {
                     Ok(off) => {
@@ -211,7 +215,7 @@ impl File {
                 while i < n {
                     let n1 = core::cmp::min(max, n - i);
                     begin_op();
-                    let ip = self.ip.as_mut().expect("failed to get inode");
+                    let ip = unsafe { &mut *self.ip };
                     ip.ilock();
                     match ip.writei(true, addr + i, self.off, n1) {
                         Ok(off) => {

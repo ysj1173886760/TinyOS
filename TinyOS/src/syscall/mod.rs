@@ -1,5 +1,7 @@
 use crate::{process::myproc, trap};
 
+use self::exec::sys_exec;
+
 mod exec;
 mod elf;
 
@@ -138,7 +140,14 @@ pub fn syscall() {
             panic!("not implemented {}", num);
         }
         SYS_exec => {
-            panic!("not implemented {}", num);
+            match sys_exec() {
+                Ok(argc) => {
+                    trapframe.a0 = argc;
+                }
+                Err(str) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_fstat => {
             panic!("not implemented {}", num);

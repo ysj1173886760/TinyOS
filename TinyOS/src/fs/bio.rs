@@ -134,8 +134,8 @@ impl BCache {
         buf.refcnt -= 1;
         if buf.refcnt == 0 {
             // no one is waiting for it
-            let prev = unsafe { &mut *buf.next };
-            let next = unsafe { &mut *buf.prev };
+            let prev = unsafe { &mut *buf.prev};
+            let next = unsafe { &mut *buf.next};
             next.prev = buf.prev;
             prev.next = buf.next;
 

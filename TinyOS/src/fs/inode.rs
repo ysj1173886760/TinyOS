@@ -607,6 +607,7 @@ impl Inode {
             if dir_entry.inum == 0 {
                 continue;
             }
+
             if *name == dir_entry.name {
                 if poff.is_some() {
                     let p = poff.unwrap();

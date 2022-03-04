@@ -1,10 +1,12 @@
+use array_macro::array;
+
 use crate::{consts::param::{MAXPATH, MAXARG}, mm::{PGSIZE, free_pagetable, PageTable, KBox, pg_round_up}, process::{myproc, proc_manager, create_proc_pagetable}, fs::{begin_op, namei, end_op, ITABLE}};
 
-use super::{elf::{ELFHeader, ELF_MAGIC, ProgramHeader, ELF_PROG_LOAD}, strlen};
+use super::{elf::{ELFHeader, ELF_MAGIC, ProgramHeader, ELF_PROG_LOAD}, strlen, argstr, argaddr, fetchaddr, fetchstr};
 
 pub fn exec(path: &mut [u8; MAXPATH], 
-            argv: &mut [Option<[u8; PGSIZE]>; MAXARG]) 
-            -> Result<u32, &'static str> {
+            argv: &mut [Option<KBox<[u8; PGSIZE]>>; MAXARG]) 
+            -> Result<usize, &'static str> {
     let mut ustack: [usize; MAXARG] = [0; MAXARG];
     let p = unsafe { &mut *myproc() };
     let mut sz = 0;
@@ -145,7 +147,7 @@ pub fn exec(path: &mut [u8; MAXPATH],
     // push argument strings, prepare rest of stack in ustack
     let mut argc = 0;
     while argv[argc].is_some() {
-        let len = strlen(argv[argc].as_ref().unwrap()) + 1;
+        let len = strlen(&**argv[argc].as_ref().unwrap()) + 1;
         sp -= len;
         sp -= sp % 16;  // riscv sp must be 16 aligned
 
@@ -153,7 +155,7 @@ pub fn exec(path: &mut [u8; MAXPATH],
             free_pagetable(pagetable, sz);
             return Err("stackpointer overflow");
         }
-        if pagetable.copyout(sp, argv[argc].as_ref().unwrap() as *const u8, len).is_err() {
+        if pagetable.copyout(sp, &**argv[argc].as_ref().unwrap() as *const u8, len).is_err() {
             free_pagetable(pagetable, sz);
             return Err("failed to intialize argument");
         }
@@ -196,5 +198,53 @@ pub fn exec(path: &mut [u8; MAXPATH],
     trapframe.sp = sp;  // initial stack pointer
     free_pagetable(oldpagetable.unwrap(), oldsz);
 
-    return Ok(argc as u32);
+    return Ok(argc);
+}
+
+pub fn sys_exec() -> Result<usize, &'static str> {
+    let mut path: [u8; MAXPATH] = [0; MAXPATH];
+    let mut argv :[Option<KBox<[u8; PGSIZE]>>; MAXARG] = array![_ => None; MAXARG];
+    let mut uargv: usize = 0;
+
+    if argstr(0, &mut path, MAXPATH).is_err()
+        || argaddr(1, &mut uargv).is_err() {
+        return Err("exec: failed to get arg");
+    }
+
+    let mut i = 0;
+    let size = core::mem::size_of::<usize>();
+    loop {
+        if i >= MAXARG {
+            // Rust will automatically call kfree for us
+            // when dropping KBox
+            return Err("exec: too many arg");
+        }
+        let mut uarg = 0;
+        if !fetchaddr(uargv + size * i, &mut uarg) {
+            return Err("exec: failed to fetch addr");
+        }
+
+        if uarg == 0 {
+            break;
+        }
+
+        let mut buf: KBox<[u8; PGSIZE]>;
+        match KBox::new() {
+            Some(pg) => {
+                buf = pg;
+            }
+            None => {
+                return Err("failed to allocate for arg");
+            }
+        }
+        
+        if fetchstr(uarg, &mut *buf, PGSIZE).is_err() {
+            return Err("failed to fetch arg");
+        }
+        argv[i] = Some(buf);
+
+        i += 1;
+    }
+
+    exec(&mut path, &mut argv)
 }

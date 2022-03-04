@@ -77,15 +77,19 @@ pub fn argraw(n: usize) -> usize {
 }
 
 // Fetch the nth 32-bit system call argument.
-pub fn argint(n: usize, ip: &mut u32) {
+pub fn argint(n: usize, ip: &mut u32)
+    -> Result<(), &'static str> {
     *ip = argraw(n) as u32;
+    Ok(())
 }
 
 // Retrieve an argument as a pointer.
 // Doesn't check for legality, since
 // copyin/copyout will do that.
-pub fn argaddr(n: usize, ip: &mut usize) {
+pub fn argaddr(n: usize, ip: &mut usize)
+    -> Result<(), &'static str> {
     *ip = argraw(n);
+    Ok(())
 }
 
 // Fetch the nth word-sized system call argument as a null-terminated string.

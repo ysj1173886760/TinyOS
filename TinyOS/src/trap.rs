@@ -1,4 +1,4 @@
-use crate::{consts::{memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ}}, riscv::{w_stvec, SSTATUS_SPP, r_sstatus, r_sepc, r_scause, intr_on, r_stval, intr_off, r_satp, r_tp, SSTATUS_SPIE, w_sstatus, w_sepc, intr_get, w_sip, r_sip}, process::{myproc, cpuid, mycpu}, mm::PGSIZE, plic::{plic_claim, plic_complete}, uart::uartintr, driver::DISK};
+use crate::{consts::{memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ}}, riscv::{w_stvec, SSTATUS_SPP, r_sstatus, r_sepc, r_scause, intr_on, r_stval, intr_off, r_satp, r_tp, SSTATUS_SPIE, w_sstatus, w_sepc, intr_get, w_sip, r_sip}, process::{myproc, cpuid, mycpu}, mm::PGSIZE, plic::{plic_claim, plic_complete}, uart::uartintr, driver::DISK, syscall::syscall};
 
 extern "C" {
     fn kernelvec();
@@ -68,10 +68,7 @@ pub extern fn usertrap() {
             // so don't enable until done with those registers.
             intr_on();
 
-            // syscall();
-            let trapframe = unsafe { &mut *p.trapframe };
-            crate::println!("calling syscall here {}", trapframe.a7);
-            panic!();
+            syscall();
         }
 
         ScauseType::IntSExt => {

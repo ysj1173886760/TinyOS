@@ -78,6 +78,7 @@ impl Cpu {
 
         // only hold p->lock, we ensure this property by checking noff
         if self.noff != 1 {
+            crate::println!("{} {}", self.noff, p.pid);
             panic!("sched locks");
         }
 

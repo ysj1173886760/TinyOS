@@ -182,6 +182,8 @@ impl Proc {
         self.xstate = status;
         self.state = ProcState::ZOMBIE;
 
+        wait_lock.release();
+
         // Jump into the scheduler, never to return
         let c = unsafe { &mut *mycpu() };
         c.sched();
@@ -222,6 +224,27 @@ impl Proc {
         // reacquire the original lock
         self.lock.release();
         lock.acquire();
+    }
+
+    // Grow or shrink user memory by n bytes
+    // Return 0 on Success, -1 on failure
+    pub fn growproc(&mut self, n: i32) -> bool {
+        let mut sz = self.sz;
+        if n > 0 {
+            sz = self.pagetable.as_mut().unwrap().uvm_alloc(sz, sz + n as usize);
+            if sz == 0 {
+                return false;
+            }
+        } else if n < 0 {
+            let new_sz = n as i64 + (sz as i64);
+            if new_sz < 0 {
+                return false;
+            }
+            sz = self.pagetable.as_mut().unwrap().uvm_dealloc(sz, new_sz as usize);
+        }
+
+        self.sz = sz;
+        true
     }
 }
 

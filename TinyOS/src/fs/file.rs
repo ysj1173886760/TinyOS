@@ -169,8 +169,7 @@ impl File {
                 }
             }
             FileType::Device => {
-                if self.major < 0 || 
-                    self.major >= NDEV as u16 || 
+                if self.major >= NDEV as u16 || 
                     unsafe { DEVSW[self.major as usize].is_none() } {
                     return Err("wrong major");
                 }
@@ -193,8 +192,7 @@ impl File {
 
         match self.ftype {
             FileType::Device => {
-                if self.major < 0 || 
-                    self.major >= NDEV as u16 || 
+                if self.major >= NDEV as u16 || 
                     unsafe { DEVSW[self.major as usize].is_none() } {
                     return Err("wrong major");
                 }

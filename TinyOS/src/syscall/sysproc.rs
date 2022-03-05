@@ -61,7 +61,6 @@ pub fn sys_fork() -> Result<usize, &'static str> {
     np.state = ProcState::RUNNABLE;
     np.lock.release();
     
-    crate::println!("fork ret");
     Ok(pid)
 }
 
@@ -81,4 +80,17 @@ pub fn sys_wait() -> Result<usize, &'static str> {
     argaddr(0, &mut addr)?;
 
     return unsafe { proc_manager.wait(p, addr) };
+}
+
+pub fn sys_sbrk() -> Result<usize, &'static str> {
+    let p = unsafe { &mut *myproc() };
+    let mut n = 0;
+    argint(0, &mut n)?;
+
+    let addr = p.sz;
+    if !p.growproc(n) {
+        return Err("failed to grow proc");
+    }
+
+    return Ok(addr);
 }

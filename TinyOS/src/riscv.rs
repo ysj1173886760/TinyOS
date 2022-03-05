@@ -64,6 +64,27 @@ pub const MSTATUS_MPP_S: usize = 1 << 11;
 pub const MSTATUS_MPP_U: usize = 0 << 11;
 pub const MSTATUS_MIE: usize = 1 << 3;
 
+// Machine-mode interrupt Enable
+pub const MIE_MEIE: usize = 1 << 11;    // external
+pub const MIE_MTIE: usize = 1 << 7;     // timer
+pub const MIE_MSIE: usize = 1 << 3;     // software
+
+#[inline]
+pub fn r_mie() -> usize {
+    unsafe {
+        let x: usize;
+        asm!("csrr {}, mie", out(reg) x);
+        return x;
+    }
+}
+
+#[inline]
+pub fn w_mie(x: usize) {
+    unsafe {
+        asm!("csrw mie, {}", in(reg) x);
+    }
+}
+
 #[inline]
 pub fn r_mstatus() -> usize {
     unsafe {
@@ -299,5 +320,12 @@ pub fn r_sip() -> usize {
         let x;
         asm!("csrr {}, sip", out(reg) x);
         return x;
+    }
+}
+
+#[inline]
+pub fn w_mscratch(x: usize) {
+    unsafe {
+        asm!("csrw mscratch, {}", in(reg) x);
     }
 }

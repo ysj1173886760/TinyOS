@@ -1,9 +1,11 @@
 use crate::consts::memlayout::{CLINT_MTIME, CLINT_MTIMECMP};
-use crate::riscv;
+use crate::consts::param::NCPU;
+use crate::riscv::{self, w_mscratch, w_mtvec, w_mstatus, r_mstatus, MSTATUS_MIE, r_mie, w_mie, MIE_MTIE};
 use crate::kmain;
 use crate::riscv::r_mhartid;
 use core::arch::asm;
 
+static mut timer_scratch: [[usize; 5]; NCPU] = [[0; 5]; NCPU];
 
 // entry.S jumps here in machine mode on stack0.
 #[no_mangle]
@@ -33,7 +35,7 @@ pub fn init_core() -> ! {
 
     // ask for clock interrupts.
     // TODO: initialize timer
-    // timerinit();
+    unsafe {timerinit();}
 
     // keep each CPU's hartid in its tp register, for cpuid().
     let id = riscv::r_mhartid();
@@ -50,18 +52,32 @@ pub fn init_core() -> ! {
 // which arrive at timervec in kernelvec.S,
 // which turns them into software interrupts for
 // devintr() in trap.c.
-fn timerinit() {
+unsafe fn timerinit() {
     // each CPU has a separate source of timer interrupts.
     let id = r_mhartid();
 
     // ask the CLINT for a timer interrupt.
     let interval = 1000000;
-    unsafe {
-        core::ptr::write_volatile(CLINT_MTIMECMP(id) as *mut usize, CLINT_MTIME + interval);
-    }
+    core::ptr::write_volatile(CLINT_MTIMECMP(id) as *mut usize, CLINT_MTIME + interval);
 
     // prepare information in scratch[] for timervec.
     // scratch[0..2] : space for timervec to save registers.
     // scratch[3] : address of CLINT MTIMECMP register.
     // scratch[4] : desired interval (in cycles) between timer interrupts.
+    let scratch = timer_scratch[id].as_ptr();
+    timer_scratch[id][3] = CLINT_MTIMECMP(id);
+    timer_scratch[id][4] = interval;
+    w_mscratch(scratch as usize);
+
+    extern "C" {
+        fn timervec();
+    }
+    // set the machine-mode trap handler
+    w_mtvec(timervec as usize);
+
+    // enable machine-mode interrupts
+    w_mstatus(r_mstatus() | MSTATUS_MIE);
+
+    // enable machine-mode timer interrupts
+    w_mie(r_mie() | MIE_MTIE);
 }

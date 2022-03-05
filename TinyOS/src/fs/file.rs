@@ -4,7 +4,7 @@ use crate::{spinlock::SpinLock, consts::param::{NFILE, NDEV, MAXOPBLOCKS}, proce
 
 use super::{Inode, log::{begin_op, end_op}, inode::{ITABLE, Stat}, device::{DEVSW, Device}, BSIZE};
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum FileType {
     None = 0,
     Pipe = 1,
@@ -171,7 +171,7 @@ impl File {
             FileType::Device => {
                 if self.major < 0 || 
                     self.major >= NDEV as u16 || 
-                    unsafe { !DEVSW[self.major as usize].is_none() } {
+                    unsafe { DEVSW[self.major as usize].is_none() } {
                     return Err("wrong major");
                 }
                 let read = unsafe { 
@@ -195,7 +195,7 @@ impl File {
             FileType::Device => {
                 if self.major < 0 || 
                     self.major >= NDEV as u16 || 
-                    unsafe { !DEVSW[self.major as usize].is_none() } {
+                    unsafe { DEVSW[self.major as usize].is_none() } {
                     return Err("wrong major");
                 }
                 let write = unsafe { 

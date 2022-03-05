@@ -220,3 +220,21 @@ pub fn sys_write() -> Result<usize, &'static str> {
 
     f.filewrite(p, n as usize)
 }
+
+pub fn sys_close() -> Result<(), &'static str> {
+    let f;
+    let mut fd = 0;
+    match argfd(0, Some(&mut fd)) {
+        Some(file) => {
+            f = file;
+        }
+        None => {
+            return Err("failed to get fd");
+        }
+    }
+    let p = unsafe { &mut *myproc() };
+    unsafe { FTABLE.fileclose(f) };
+    p.ofile[fd] = core::ptr::null_mut();
+
+    return Ok(());
+}

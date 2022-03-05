@@ -33,16 +33,18 @@ impl Cpu {
             fn swtch(old: *mut Context, new: *mut Context);
         }
 
+        let mut last = 0;
         loop {
             // Avoid deadlock by ensuring that devices can interrupt.
             intr_on();
-            match proc_manager.get_runnable() {
+            match proc_manager.get_runnable(&mut last) {
                 Some(p) => {
                     // Switch to chosen process.  It is the process's job
                     // to release its lock and then reacquire it
                     // before jumping back to us.
                     p.state = ProcState::RUNNING;
                     self.proc = p as *mut Proc;
+                    // crate::println!("running {}", p.pid);
                     swtch(&mut self.context as *mut Context,
                           &mut p.context as *mut Context);
                     

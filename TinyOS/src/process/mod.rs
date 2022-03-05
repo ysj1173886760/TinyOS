@@ -113,19 +113,25 @@ impl ProcManager {
     // find a runnable process
     // used in scheduler
     // return with p->lock held
-    pub fn get_runnable(&mut self) -> Option<&mut Proc> {
+    pub fn get_runnable(&mut self, last: &mut usize) -> Option<&mut Proc> {
+        // search a round
         for i in 0..self.proc.len() {
-            let p = &mut self.proc[i];
+            let cur = (*last + i) % self.proc.len();
+            let p = &mut self.proc[cur];
             p.lock.acquire();
             match p.state {
                 ProcState::RUNNABLE => {
-                    return Some(&mut self.proc[i]);
+                    // update last
+                    *last = (cur + 1) % self.proc.len();
+                    return Some(&mut self.proc[cur]);
                 },
                 _ => {},
             }
             p.lock.release();
         }
 
+        // reset last
+        *last = 0;
         None
     }
 

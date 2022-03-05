@@ -53,5 +53,6 @@ pub fn sys_fork() -> Result<usize, &'static str> {
     np.state = ProcState::RUNNABLE;
     np.lock.release();
     
+    crate::println!("fork ret");
     Ok(pid)
 }

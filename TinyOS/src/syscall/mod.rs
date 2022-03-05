@@ -1,6 +1,6 @@
 use crate::{process::myproc, trap};
 
-use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod, sys_dup, sys_write, sys_read}, sysproc::sys_fork};
+use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod, sys_dup, sys_write, sys_read, sys_close}, sysproc::sys_fork};
 
 mod exec;
 mod elf;
@@ -214,7 +214,8 @@ pub fn syscall() {
                 Ok(size) => {
                     trapframe.a0 = size;
                 }
-                Err(_) => {
+                Err(err) => {
+                    crate::println!("sys write err: {}", err);
                     trapframe.a0 = usize::MAX;
                 }
             }
@@ -239,7 +240,14 @@ pub fn syscall() {
             panic!("not implemented {}", num);
         }
         SYS_close => {
-            panic!("not implemented {}", num);
+            match sys_close() {
+                Ok(()) => {
+                    trapframe.a0 = 0;
+                }
+                Err(_) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         _ => {
             crate::println!("{} {:?} unknown sys call {}", p.pid, p.name, num);

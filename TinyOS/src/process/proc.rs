@@ -1,7 +1,7 @@
 use array_macro::array;
 
-use crate::{mm::{KBox, PageTable, PteFlag, PGSIZE, kalloc, uvm_free, kfree}, spinlock::SpinLock, fs::{Inode, namei, File}, consts::param::NOFILE};
-use super::{TrapFrame, Context, fork_ret, proc_manager, mycpu};
+use crate::{mm::{KBox, PageTable, PteFlag, PGSIZE, kalloc, uvm_free, kfree}, spinlock::SpinLock, fs::{Inode, namei, File, FTABLE, begin_op, ITABLE, end_op}, consts::param::NOFILE};
+use super::{TrapFrame, Context, fork_ret, proc_manager, mycpu, wait_lock};
 use crate::consts::memlayout::{TRAMPOLINE, TRAPFRAME};
 
 use core::ptr;
@@ -16,6 +16,7 @@ pub enum ProcState {
     ZOMBIE,
 }
 
+
 pub struct Proc {
     pub lock: SpinLock<()>,
 
@@ -24,8 +25,10 @@ pub struct Proc {
     pub channel: usize,
     pub pid: usize,
     pub killed: bool,
+    pub xstate: i32,    // exit status to be returned to parent's wait
 
     // wait_lock must be held when using this:
+    pub parent: *mut Proc,
     // struct proc *parent
 
     // these are private to the process, so p->lock need not be held
@@ -60,6 +63,8 @@ impl Proc {
             killed: false,
             cwd: ptr::null_mut(),
             ofile: array![_ => core::ptr::null_mut(); NOFILE],
+            parent: ptr::null_mut(),
+            xstate: 0,
         }
     }
 
@@ -108,10 +113,13 @@ impl Proc {
 
         self.sz = 0;
         self.pid = 0;
-        self.name[0] = 0;
+        self.name = [0; 16];
         self.channel = 0;
         self.killed = false;
         self.state = ProcState::UNUSED;
+        self.xstate = 0;
+        self.parent = ptr::null_mut();
+        self.channel = 0;
     }
 
     // Set up first user process.
@@ -137,12 +145,48 @@ impl Proc {
         self.state = ProcState::RUNNABLE;
     }
 
+    // Exit the current process.  Does not return.
+    // An exited process remains in the zombie state
+    // until its parent calls wait().
     pub fn exit(&mut self, status: i32) {
         if unsafe { proc_manager.is_init_proc(&self) } {
             panic!("init exiting");
         }
 
-        panic!("todo exit");
+        // close all open files
+        for fd in 0..NOFILE {
+            if !self.ofile[fd].is_null() {
+                let f = unsafe { &mut *self.ofile[fd] };
+                unsafe { FTABLE.fileclose(f) };
+                self.ofile[fd] = ptr::null_mut();
+            }
+        }
+
+        // free the reference to cwd
+        begin_op();
+        let cwd = unsafe { &mut *self.cwd };
+        unsafe { ITABLE.iput(cwd) };
+        end_op();
+        self.cwd = ptr::null_mut();
+
+        wait_lock.acquire();
+
+        // give any children to init
+        unsafe { proc_manager.reparent(self as *mut Proc) };
+        
+        // Parent might be sleeping in wait
+        unsafe { proc_manager.wakeup(self.parent as usize) };
+
+        self.lock.acquire();
+
+        self.xstate = status;
+        self.state = ProcState::ZOMBIE;
+
+        // Jump into the scheduler, never to return
+        let c = unsafe { &mut *mycpu() };
+        c.sched();
+
+        panic!("zombie exit");
     }
 
     pub fn check_exit(&mut self, status: i32) {

@@ -50,13 +50,12 @@ pub fn fsinit(dev: u32) {
 
 /// zero a block
 pub fn bzero(dev: u32, bno: u32) {
-    let b = unsafe { BCACHE.bread(dev, bno) };
-    // TODO: use memset
-    for i in 0..b.data.len() {
-        b.data[i] = 0;
+    unsafe {
+        let b = BCACHE.bread(dev, bno);
+        core::ptr::write_bytes(b.data.as_mut_ptr(), 0, b.data.len());
+        log_write(b);
+        BCACHE.brelse(b);
     }
-    log_write(b);
-    unsafe { BCACHE.brelse(b) };
 }
 
 pub fn create(path: &[u8], itype: InodeType, major: u16, minor: u16) -> Option<&'static mut Inode> {

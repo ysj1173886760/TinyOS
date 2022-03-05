@@ -1,4 +1,6 @@
-use crate::{process::{myproc, Proc, proc_manager, ProcState}, consts::param::NOFILE, fs::{FTABLE, ITABLE}};
+use crate::{process::{myproc, Proc, proc_manager, ProcState, wait_lock}, consts::param::NOFILE, fs::{FTABLE, ITABLE}};
+
+use super::{argint, argaddr};
 
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
@@ -48,11 +50,35 @@ pub fn sys_fork() -> Result<usize, &'static str> {
 
     np.lock.release();
 
-    // TODO: wait lock here
+    // must holding wait_lock to change parent filed
+    // because p might get killed when we were trying to fork
+    // so we need to reparent new process to initproc
+    wait_lock.acquire();
+    np.parent = p as *mut Proc;
+    wait_lock.release();
+
     np.lock.acquire();
     np.state = ProcState::RUNNABLE;
     np.lock.release();
     
     crate::println!("fork ret");
     Ok(pid)
+}
+
+pub fn sys_exit() -> Result<(), &'static str> {
+    let mut n = 0;
+    argint(0, &mut n)?;
+    let p = unsafe { &mut *myproc() };
+    p.exit(n);
+
+    // we can't reach here
+    return Ok(())
+}
+
+pub fn sys_wait() -> Result<usize, &'static str> {
+    let p = unsafe { &mut *myproc() };
+    let mut addr = 0;
+    argaddr(0, &mut addr)?;
+
+    return unsafe { proc_manager.wait(p, addr) };
 }

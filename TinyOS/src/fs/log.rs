@@ -76,7 +76,7 @@ impl Log {
         self.start = sb.logstart;
         self.size = sb.nlog;
         self.dev = dev;
-        // TODO: recover from log
+        self.recover_from_log();
     }
 
     // Copy committed blocks from log to their home location

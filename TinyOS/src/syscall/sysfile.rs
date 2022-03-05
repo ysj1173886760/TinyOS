@@ -52,6 +52,7 @@ pub fn sys_open() -> Result<usize, &'static str> {
     begin_op();
 
     let ip;
+    let omode = omode as u32;
     if (omode & O_CREATE) != 0 {
         match create(&path, InodeType::File, 0, 0) {
             Some(i) => {

@@ -15,6 +15,9 @@ mod trapframe;
 
 pub static mut proc_manager: ProcManager = ProcManager::new();
 
+// used to avoid lost wakeup
+pub static wait_lock: SpinLock<()> = SpinLock::new((), "wait lock");
+
 pub struct ProcManager {
     proc: [Proc; NPROC],
     pid_lock: SpinLock<usize>,
@@ -150,6 +153,67 @@ impl ProcManager {
                 p.state = ProcState::RUNNABLE;
             }
             drop(guard);
+        }
+    }
+
+    // Wait for a child process to exit and return it's pid
+    // Return -1 if this process has no children
+    pub fn wait(&mut self, p: &mut Proc, addr: usize) -> Result<usize, &'static str> {
+        wait_lock.acquire();
+
+        let mut pid = 0;
+        loop {
+            // Scan through table looking for exited children
+            let mut havekids = false;
+            for i in 0..self.proc.len() {
+                if self.proc[i].parent == p as *mut Proc {
+                    // make sure the child isn't still in exit() or swtch()
+                    self.proc[i].lock.acquire();
+
+                    havekids = true;
+                    if self.proc[i].state == ProcState::ZOMBIE {
+                        // Found one.
+                        pid = self.proc[i].pid;
+                        if addr != 0 && 
+                            p.pagetable
+                                .as_mut()
+                                .unwrap()
+                                .copyout(addr,
+                                    &self.proc[i].xstate as *const _ as *const u8,
+                                    core::mem::size_of::<i32>()).is_err() {
+                            self.proc[i].lock.release();
+                            wait_lock.release();
+                        }
+                        self.proc[i].free();
+                        self.proc[i].lock.release();
+                        wait_lock.release();
+                        return Ok(pid);
+                    }
+
+                    self.proc[i].lock.release();
+                }
+
+            }
+
+            // no need wait if we don't have any children
+            if !havekids || p.killed {
+                wait_lock.release();
+                return Err("wait failed");
+            }
+
+            // wait for a child to exit
+            p.sleep(p as *const _ as usize, &wait_lock);
+        }
+    }
+
+    // Pass p's abandoned children to init
+    // Caller must hold wait_lock
+    pub fn reparent(&mut self, p: *mut Proc) {
+        for i in 0..self.proc.len() {
+            if self.proc[i].parent == p {
+                self.proc[i].parent = &mut self.proc[0] as *mut Proc;
+                self.wakeup(&self.proc[0] as *const _ as usize);
+            }
         }
     }
 }

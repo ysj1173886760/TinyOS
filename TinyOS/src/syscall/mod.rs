@@ -1,6 +1,6 @@
 use crate::{process::myproc, trap};
 
-use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod, sys_dup, sys_write, sys_read, sys_close}, sysproc::sys_fork};
+use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod, sys_dup, sys_write, sys_read, sys_close}, sysproc::{sys_fork, sys_wait, sys_exit}};
 
 mod exec;
 mod elf;
@@ -87,9 +87,9 @@ pub fn argraw(n: usize) -> usize {
 }
 
 // Fetch the nth 32-bit system call argument.
-pub fn argint(n: usize, ip: &mut u32)
+pub fn argint(n: usize, ip: &mut i32)
     -> Result<(), &'static str> {
-    *ip = argraw(n) as u32;
+    *ip = argraw(n) as i32;
     Ok(())
 }
 
@@ -140,10 +140,24 @@ pub fn syscall() {
             }
         }
         SYS_exit => {
-            panic!("not implemented {}", num);
+            match sys_exit() {
+                Ok(()) => {
+                    trapframe.a0 = 0;
+                }
+                Err(_) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_wait => {
-            panic!("not implemented {}", num);
+            match sys_wait() {
+                Ok(pid) => {
+                    trapframe.a0 = pid;
+                }
+                Err(_) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_pipe => {
             panic!("not implemented {}", num);

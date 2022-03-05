@@ -34,7 +34,6 @@ pub fn init_core() -> ! {
     riscv::w_pmpcfg0(0xf);
 
     // ask for clock interrupts.
-    // TODO: initialize timer
     unsafe {timerinit();}
 
     // keep each CPU's hartid in its tp register, for cpuid().

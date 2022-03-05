@@ -29,6 +29,42 @@ Handle timer interrupt and implement scheduling
 
 # Update on 3.5
 
+I would say my previous implementation map is totally a disaster. Because even on a single core system, we still need lock to synchronize. Let me introduce the actual implementation map, you can also refer to my github commit records.
+
+UART
+
+spinLock
+
+kernel memory management (kalloc)
+
+proc framework
+
+proc manager
+
+cpu structure and scheduling
+
+execute initcode and halt when calling sys_exec
+
+plic
+
+sleeplock
+
+virt disk driver
+
+bio(buffer cache for disk block)
+
+superblock, log, bitmap(basic part for fs)
+
+inodes and directory
+
+file abstraction layer
+
+port console
+
+sys_exec
+
+then other necessary syscall
+
 Currently, TinyOS can exec init and sh and some other user programs
 
 check this screenshot

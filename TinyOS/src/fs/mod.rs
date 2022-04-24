@@ -2,10 +2,10 @@ pub use bio::{Buf, BCACHE};
 pub use inode::{Inode, ITABLE, InodeType};
 pub use device::{DEVSW, Device};
 pub use log::{begin_op, end_op};
-pub use directory::{namei};
+pub use directory::{namei, DIRSIZ, nameiparent, DirEntry};
 pub use file::{File, FileType, FTABLE};
 
-use self::{superblock::SB, log::{LOG, log_write}, inode::{BBLOCK, BPB, ialloc}, directory::{DIRSIZ, nameiparent}};
+use self::{superblock::SB, log::{LOG, log_write}, inode::{BBLOCK, BPB, ialloc}};
 
 pub const BSIZE: usize = 1024;
 pub const FSMAGIC: u32 = 0x10203040;

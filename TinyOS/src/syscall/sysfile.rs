@@ -1,4 +1,4 @@
-use crate::{fs::{File, Inode, begin_op, create, FileType, InodeType, end_op, namei, ITABLE, FTABLE}, consts::param::{NOFILE, MAXPATH, NDEV}, process::myproc};
+use crate::{fs::{File, Inode, begin_op, create, FileType, InodeType, end_op, namei, ITABLE, FTABLE, DIRSIZ, nameiparent, strcmp, DirEntry}, consts::param::{NOFILE, MAXPATH, NDEV}, process::myproc};
 
 use super::{argint, argstr, O_CREATE, O_RDONLY, O_WRONLY, O_RDWR, O_TRUNC, argaddr};
 
@@ -226,4 +226,166 @@ pub fn sys_close() -> Result<(), &'static str> {
     p.ofile[fd] = core::ptr::null_mut();
 
     return Ok(());
+}
+
+// Create the path new as a link to the same inode as old
+pub fn sys_link() -> Result<(), &'static str> {
+    let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
+    let mut new: [u8; MAXPATH] = [0; MAXPATH];
+    let mut old: [u8; MAXPATH] = [0; MAXPATH];
+
+    argstr(0, &mut old, MAXPATH)?;
+    argstr(1, &mut new, MAXPATH)?;
+
+    begin_op();
+    
+    let ip;
+    match namei(&old) {
+        Some(i) => ip = i,
+        None => {
+            end_op();
+            return Err("failed to find inode corresponding to old");
+        }
+    }
+
+    ip.ilock();
+    if ip.itype == InodeType::Directory {
+        // you can't have multiple reference to a single directory
+        unsafe { ITABLE.iunlockput(ip); }
+        end_op();
+        return Err("failed link to a directory")
+    }
+
+    ip.nlink += 1;
+    // update inode to disk
+    ip.iupdate();
+    ip.iunlock();
+
+    let dp;
+    // i doubt that do we really need to do this here?
+    // TODO: simplify the error handling here
+    match nameiparent(&new, &mut name) {
+        Some(i) => dp = i,
+        None => {
+            ip.ilock();
+            ip.nlink -= 1;
+            ip.iupdate();
+            unsafe { ITABLE.iunlockput(ip); }
+            end_op();
+            return Err("failed to find parent")
+        }
+    }
+
+    dp.ilock();
+    if dp.dev != ip.dev || !dp.dirlink(&name, ip.inum) {
+        unsafe { ITABLE.iunlockput(dp); }
+        ip.ilock();
+        ip.nlink -= 1;
+        ip.iupdate();
+        unsafe { ITABLE.iunlockput(ip); }
+        end_op();
+        return Err("failed link the file")
+    }
+
+    unsafe {
+        ITABLE.iunlockput(dp);
+        ITABLE.iput(ip);
+    }
+
+    end_op();
+
+    Ok(())
+}
+
+// unlink the file. i.e. delete the file
+pub fn sys_unlink() -> Result<(), &'static str> {
+    let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
+    let mut path: [u8; MAXPATH] = [0; MAXPATH];
+
+    argstr(0, &mut path, MAXPATH)?;
+
+    begin_op();
+
+    let dp;
+    match nameiparent(&path, &mut name) {
+        Some(i) => dp = i,
+        None => {
+            end_op();
+            return Err("failed to find parent");
+        }
+    }
+    dp.ilock();
+
+    // cannot unlink "." or ".."
+    if strcmp(&name, b".") ||
+       strcmp(&name, b"..") {
+        unsafe { ITABLE.iunlockput(dp); }
+        end_op();
+        return Err("cannot unlink \".\" or \"..\"");
+    }
+
+    let ip;
+    let mut poff = 0;
+    // trick the compiler here
+    unsafe {
+        let shadow = &mut *(&dp as *const _ as *mut Inode);
+        match shadow.dirloopup(&name, Some(&mut poff)) {
+            Some(i) => ip = i,
+            None => {
+                unsafe { ITABLE.iunlockput(dp); }
+                end_op();
+                return Err("failed to find file");
+            }
+        }
+    }
+    ip.ilock();
+
+    if ip.nlink < 1 {
+        panic!("unlink: nlink < 1");
+    }
+    if ip.itype == InodeType::Directory && !ip.isDirEmpty() {
+        // we shouldn't delete a directory that contains file
+        unsafe { 
+            ITABLE.iunlockput(ip);
+            ITABLE.iunlockput(dp); 
+        }
+        end_op();
+        return Err("failed to unlink non-empty directory");
+    }
+
+    // read the dir entry
+    // FIXME: is this step necessary?
+    // this is just a double check that we have this file
+    // but we have already read it before
+    let mut dir_entry = DirEntry::new();
+    let dir_size = core::mem::size_of::<DirEntry>();
+
+    // trick the compiler here
+    unsafe {
+        let shadow = &mut *(&dp as *const _ as *mut Inode);
+        if shadow.writei(false,
+                    &dir_entry as *const _ as usize, 
+                    poff as usize, dir_size)
+            .expect("unlink: writei") != dir_size {
+            panic!("unlink: writei");
+        }
+    }
+    
+    ip.nlink -= 1;
+    ip.iupdate();
+
+    // remove the refcnt from child to parent
+    if ip.itype == InodeType::Directory {
+        dp.nlink -= 1;
+        dp.iupdate();
+    }
+
+    unsafe {
+        ITABLE.iunlockput_leak(dp);
+        ITABLE.iunlockput(ip);
+    }
+
+    end_op();
+
+    Ok(())
 }

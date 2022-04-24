@@ -1,6 +1,6 @@
 use crate::{process::{myproc, mycpu}, trap, spinlock::{pop_off, push_off}};
 
-use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod, sys_dup, sys_write, sys_read, sys_close}, sysproc::{sys_fork, sys_wait, sys_exit, sys_sbrk, sys_kill, sys_getpid}};
+use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod, sys_dup, sys_write, sys_read, sys_close, sys_link, sys_unlink, sys_mkdir, sys_chdir}, sysproc::{sys_fork, sys_wait, sys_exit, sys_sbrk, sys_kill, sys_getpid}};
 
 mod exec;
 mod elf;
@@ -197,7 +197,14 @@ pub fn syscall() {
             panic!("not implemented {}", num);
         }
         SYS_chdir => {
-            panic!("not implemented {}", num);
+            match sys_chdir() {
+                Ok(()) => {
+                    trapframe.a0 = 0;
+                }
+                Err(str) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_dup => {
             match sys_dup() {
@@ -267,13 +274,34 @@ pub fn syscall() {
             }
         }
         SYS_unlink => {
-            panic!("not implemented {}", num);
+            match sys_unlink() {
+                Ok(()) => {
+                    trapframe.a0 = 0;
+                }
+                Err(_) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_link => {
-            panic!("not implemented {}", num);
+            match sys_link() {
+                Ok(()) => {
+                    trapframe.a0 = 0;
+                }
+                Err(_) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_mkdir => {
-            panic!("not implemented {}", num);
+            match sys_mkdir() {
+                Ok(()) => {
+                    trapframe.a0 = 0;
+                }
+                Err(_) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_close => {
             match sys_close() {

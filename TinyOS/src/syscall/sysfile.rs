@@ -1,3 +1,5 @@
+use core::any::Any;
+
 use crate::{fs::{File, Inode, begin_op, create, FileType, InodeType, end_op, namei, ITABLE, FTABLE, DIRSIZ, nameiparent, strcmp, DirEntry}, consts::param::{NOFILE, MAXPATH, NDEV}, process::myproc};
 
 use super::{argint, argstr, O_CREATE, O_RDONLY, O_WRONLY, O_RDWR, O_TRUNC, argaddr};
@@ -381,11 +383,66 @@ pub fn sys_unlink() -> Result<(), &'static str> {
     }
 
     unsafe {
-        ITABLE.iunlockput_leak(dp);
+        ITABLE.iunlockput(dp);
         ITABLE.iunlockput(ip);
     }
 
     end_op();
+
+    Ok(())
+}
+
+pub fn sys_mkdir() -> Result<(), &'static str> {
+    let mut path: [u8; MAXPATH] = [0; MAXPATH];
+    argstr(0, &mut path, MAXPATH)?;
+
+    begin_op();
+
+    let ip;
+    match create(&path, InodeType::Directory, 0, 0) {
+        Some(i) => ip = i,
+        None => {
+            end_op();
+            return Err("failed to create directory");
+        }
+    }
+    unsafe { ITABLE.iunlockput(ip); }
+    end_op();
+
+    Ok(())
+}
+
+pub fn sys_chdir() -> Result<(), &'static str> {
+    let mut path: [u8; MAXPATH] = [0; MAXPATH];
+    let p = unsafe { &mut *myproc() };
+    let ip;
+
+    argstr(0, &mut path, MAXPATH)?;
+
+    begin_op();
+    match namei(&path) {
+        Some(i) => ip = i,
+        None => {
+            end_op();
+            return Err("failed to find path");
+        }
+    }
+
+    ip.ilock();
+    if ip.itype != InodeType::Directory {
+        unsafe { ITABLE.iunlockput(ip) };
+        end_op();
+        return Err("path is not a directory");
+    }
+
+    ip.iunlock();
+    unsafe {
+        ITABLE.iput(&mut *p.cwd);
+    }
+    // keep in mind that iput should be wrapped into transaction
+    end_op();
+
+    p.cwd = ip;
 
     Ok(())
 }

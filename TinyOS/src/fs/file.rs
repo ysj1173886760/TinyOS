@@ -134,9 +134,10 @@ impl File {
     // helper function for filestat
     fn get_stat(&mut self) -> Stat {
         let ip = unsafe { &mut *self.ip };
-        (*ip).ilock();
+        ip.ilock();
         let st = Stat::from_inode(ip);
-        (*ip).iunlock();
+        ip.iunlock();
+        // crate::println!("{:?}", st);
 
         return st;
     }

@@ -1,6 +1,6 @@
 use crate::{process::{myproc, mycpu}, trap, spinlock::{pop_off, push_off}};
 
-use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod, sys_dup, sys_write, sys_read, sys_close, sys_link, sys_unlink, sys_mkdir, sys_chdir}, sysproc::{sys_fork, sys_wait, sys_exit, sys_sbrk, sys_kill, sys_getpid}};
+use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod, sys_dup, sys_write, sys_read, sys_close, sys_link, sys_unlink, sys_mkdir, sys_chdir, sys_fstat}, sysproc::{sys_fork, sys_wait, sys_exit, sys_sbrk, sys_kill, sys_getpid}};
 
 mod exec;
 mod elf;
@@ -194,7 +194,14 @@ pub fn syscall() {
             }
         }
         SYS_fstat => {
-            panic!("not implemented {}", num);
+            match sys_fstat() {
+                Ok(()) => {
+                    trapframe.a0 = 0;
+                }
+                Err(_) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_chdir => {
             match sys_chdir() {

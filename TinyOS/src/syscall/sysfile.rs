@@ -446,3 +446,23 @@ pub fn sys_chdir() -> Result<(), &'static str> {
 
     Ok(())
 }
+
+pub fn sys_fstat() -> Result<(), &'static str> {
+    let mut f;
+    let mut addr = 0;
+
+    match argfd(0, None) {
+        Some(file) => f = file,
+        None => {
+            return Err("failed to get argument");
+        }
+    }
+
+    argaddr(1, &mut addr)?;
+
+    if !f.filestat(addr) {
+        return Err("failed to get file status");
+    }
+
+    Ok(())
+}

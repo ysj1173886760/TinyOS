@@ -116,7 +116,7 @@ pub fn BBLOCK(b: u32, sb: &SuperBlock) -> u32 {
 // read or write that inode's ip->valid, ip->size, ip->type, &c.
 
 #[repr(u16)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum InodeType {
     Empty = 0,
     Directory = 1,
@@ -142,6 +142,8 @@ pub struct Inode {
     pub addrs: [u32; NDIRECT + 1],  // data block address
 }
 
+#[repr(C)]
+#[derive(Debug)]
 pub struct Stat {
     dev: u32,   // File System's disk device
     ino: u32,   // Inode number

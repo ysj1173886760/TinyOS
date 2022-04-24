@@ -94,3 +94,20 @@ pub fn sys_sbrk() -> Result<usize, &'static str> {
 
     return Ok(addr);
 }
+
+pub fn sys_kill() -> Result<usize, &'static str> {
+    let mut pid = 0;
+    argint(0, &mut pid)?;
+
+    let pid = pid as usize;
+    if unsafe { proc_manager.kill(pid) } {
+        return Ok(0);
+    }
+
+    return Err("failed to kill proc");
+}
+
+pub fn sys_getpid() -> Result<usize, &'static str> {
+    let p = unsafe { &mut *myproc() };
+    return Ok(p.pid);
+}

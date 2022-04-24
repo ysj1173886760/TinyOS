@@ -216,6 +216,28 @@ impl ProcManager {
             }
         }
     }
+
+    // Kill the process with the given pid.
+    // The victim won't exit until it tries to return
+    // to user space
+    // return whether we succeed or not
+    pub fn kill(&mut self, pid: usize) -> bool {
+        for i in 0..self.proc.len() {
+            let guard = self.proc[i].lock.lock();
+            if self.proc[i].pid == pid {
+                self.proc[i].killed = true;
+
+                // wake it up
+                // and it will notice it was killed
+                if self.proc[i].state == ProcState::SLEEPING {
+                    self.proc[i].state = ProcState::RUNNABLE;
+                }
+                return true;
+            }
+            drop(guard);
+        }
+        false
+    }
 }
 
 // A fork child's very first scheduling by scheduler()

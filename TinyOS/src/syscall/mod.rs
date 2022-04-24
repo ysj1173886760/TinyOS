@@ -1,6 +1,6 @@
 use crate::{process::{myproc, mycpu}, trap, spinlock::{pop_off, push_off}};
 
-use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod, sys_dup, sys_write, sys_read, sys_close}, sysproc::{sys_fork, sys_wait, sys_exit, sys_sbrk}};
+use self::{exec::sys_exec, sysfile::{sys_open, sys_mknod, sys_dup, sys_write, sys_read, sys_close}, sysproc::{sys_fork, sys_wait, sys_exit, sys_sbrk, sys_kill, sys_getpid}};
 
 mod exec;
 mod elf;
@@ -173,7 +173,14 @@ pub fn syscall() {
             }
         }
         SYS_kill => {
-            panic!("not implemented {}", num);
+            match sys_kill() {
+                Ok(res) => {
+                    trapframe.a0 = res;
+                }
+                Err(str) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_exec => {
             match sys_exec() {
@@ -203,7 +210,14 @@ pub fn syscall() {
             }
         }
         SYS_getpid => {
-            panic!("not implemented {}", num);
+            match sys_getpid() {
+                Ok(pid) => {
+                    trapframe.a0 = pid;
+                }
+                Err(_) => {
+                    trapframe.a0 = usize::MAX;
+                }
+            }
         }
         SYS_sbrk => {
             match sys_sbrk() {

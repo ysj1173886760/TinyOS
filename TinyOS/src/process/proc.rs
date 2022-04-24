@@ -246,6 +246,19 @@ impl Proc {
         self.sz = sz;
         true
     }
+
+    // Allocate a file descriptor for the gived file
+    // Takes over file reference from caller on success
+    pub fn fdalloc(&mut self, f: &mut File) -> Result<usize, &'static str> {
+        for fd in 0..NOFILE {
+            if self.ofile[fd].is_null() {
+                self.ofile[fd] = f as *mut File;
+                return Ok(fd);
+            }
+        }
+
+        Err("failed to allocate fd")
+    }
 }
 
 

@@ -27,21 +27,6 @@ pub fn argfd(n: usize, pfd: Option<&mut usize>) -> Option<&mut File> {
     Some(unsafe { &mut *p.ofile[fd] })
 }
 
-// Allocate a file descriptor for the gived file
-// Takes over file reference from caller on success
-pub fn fdalloc(f: &mut File) -> Result<usize, &'static str> {
-    let p = unsafe { &mut *myproc() };
-
-    for fd in 0..NOFILE {
-        if p.ofile[fd].is_null() {
-            p.ofile[fd] = f as *mut File;
-            return Ok(fd);
-        }
-    }
-
-    Err("failed to allocate fd")
-}
-
 pub fn sys_open() -> Result<usize, &'static str> {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let mut omode = 0;
@@ -100,7 +85,8 @@ pub fn sys_open() -> Result<usize, &'static str> {
     }
 
     let mut fd = 0;
-    match fdalloc(f) {
+    let p = unsafe { &mut *myproc() };
+    match p.fdalloc(f) {
         Ok(tmp) => {
             fd = tmp;
         }
@@ -178,7 +164,9 @@ pub fn sys_dup() -> Result<usize, &'static str> {
             return Err("failed to get fd");
         }
     }
-    let fd = fdalloc(f)?;
+
+    let p = unsafe { &mut *myproc() };
+    let fd = p.fdalloc(f)?;
     unsafe { FTABLE.filedup(f) };
 
     Ok(fd)

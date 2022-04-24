@@ -2,7 +2,7 @@ use array_macro::array;
 
 use crate::{sleeplock::SleepLock, spinlock::SpinLock, consts::param::NINODE, fs::log::{log_write, LOG}, process::{either_copyout, either_copyin}};
 
-use super::{NDIRECT, BSIZE, superblock::{SuperBlock, SB}, bio::BCACHE, bitmap::{bfree, balloc}, NINDIRECT, directory::{DIRSIZ, DirEntry}, strclone, strcmp};
+use super::{NDIRECT, BSIZE, superblock::{SuperBlock, SB}, bio::BCACHE, bitmap::{bfree, balloc}, NINDIRECT, directory::{DIRSIZ, DirEntry}, strclone, strcmp, MAXFILE};
 
 /// On disk inode structure
 #[repr(C)]
@@ -558,8 +558,8 @@ impl Inode {
         if off > self.size as usize || off + n < off {
             return Err("overflow");
         }
-        if off + n > self.size as usize {
-            n = self.size as usize - off;
+        if off + n > MAXFILE * BSIZE {
+            return Err("overflow");
         }
 
         let mut tot = 0;
@@ -632,7 +632,7 @@ impl Inode {
 
         let mut dir_entry = DirEntry::new();
         let dir_size = core::mem::size_of::<DirEntry>();
-        let mut d_off = None;
+        let mut d_off = 0;
 
         // Look for an empty dirent
         for off in (0..self.size).step_by(dir_size) {
@@ -641,19 +641,16 @@ impl Inode {
                 panic!("dirlink read");
             }
             if dir_entry.inum == 0 {
-                d_off = Some(off);
+                d_off = off;
                 break;
             }
         }
 
-        // do we guarantee there will be a slot?
-        if d_off.is_none() {
-            return false;
-        }
+        // if there is no empty slot, we will append the entry
 
         dir_entry.inum = inum as u16;
         dir_entry.name = strclone(name);
-        if self.writei(false, &dir_entry as *const _ as usize, d_off.unwrap() as usize, dir_size)
+        if self.writei(false, &dir_entry as *const _ as usize, d_off as usize, dir_size)
             .expect("dirlink") != dir_size {
             panic!("dirlink");
         }

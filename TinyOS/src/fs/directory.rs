@@ -6,6 +6,7 @@ use super::{inode::{Inode, ITABLE, InodeType}, ROOTINO};
 pub const DIRSIZ: usize = 14;
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct DirEntry {
     pub inum: u16,
     pub name: [u8; DIRSIZ],

@@ -1,4 +1,4 @@
-use crate::{process::{myproc, Proc, proc_manager, ProcState, wait_lock}, consts::param::NOFILE, fs::{FTABLE, ITABLE}};
+use crate::{process::{myproc, Proc, proc_manager, ProcState, wait_lock}, consts::param::NOFILE, fs::{FTABLE, ITABLE}, ticker::ticker};
 
 use super::{argint, argaddr};
 
@@ -110,4 +110,24 @@ pub fn sys_kill() -> Result<usize, &'static str> {
 pub fn sys_getpid() -> Result<usize, &'static str> {
     let p = unsafe { &mut *myproc() };
     return Ok(p.pid);
+}
+
+// time related
+pub fn sys_sleep() -> Result<(), &'static str> {
+    let mut n = 0;
+    argint(0, &mut n)?;
+
+    if n < 0 {
+        // return directly
+        return Err("ticks should be positive number");
+    }
+
+    unsafe { ticker.sleep(n as usize) }
+}
+
+// return how many clock tick interrupts have occurred
+// since start.
+
+pub fn sys_uptime() -> Result<usize, &'static str> {
+    unsafe { ticker.uptime() }
 }

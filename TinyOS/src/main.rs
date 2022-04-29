@@ -27,6 +27,7 @@ mod sleeplock;
 mod driver;
 mod fs;
 mod syscall;
+mod ticker;
 
 // ///////////////////////////////////
 // / LANGUAGE STRUCTURES / FUNCTIONS

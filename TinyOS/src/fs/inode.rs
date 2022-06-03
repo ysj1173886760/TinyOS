@@ -594,6 +594,7 @@ impl Inode {
     // If found, set *poff to byte offset of entry
     pub fn dirloopup(&self, name: &[u8], poff: Option<&mut usize>) -> Option<&mut Inode> {
         if self.itype != InodeType::Directory {
+            crate::println!("{:?}", self.itype);
             panic!("dirloopup not DIR");
         }
 

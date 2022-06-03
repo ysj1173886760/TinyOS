@@ -330,7 +330,7 @@ pub fn sys_unlink() -> Result<(), &'static str> {
     let mut poff = 0;
     // trick the compiler here
     unsafe {
-        let shadow = &mut *(&dp as *const _ as *mut Inode);
+        let shadow = &mut *(dp as *const _ as *mut Inode);
         match shadow.dirloopup(&name, Some(&mut poff)) {
             Some(i) => ip = i,
             None => {
@@ -364,7 +364,7 @@ pub fn sys_unlink() -> Result<(), &'static str> {
 
     // trick the compiler here
     unsafe {
-        let shadow = &mut *(&dp as *const _ as *mut Inode);
+        let shadow = &mut *(dp as *const _ as *mut Inode);
         if shadow.writei(false,
                     &dir_entry as *const _ as usize, 
                     poff as usize, dir_size)
